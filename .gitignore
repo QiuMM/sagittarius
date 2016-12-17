@@ -1,0 +1,15 @@
+target/
+cobertura-history/
+testing/
+.settings
+.classpath
+.project
+doc
+docs
+notes
+.DS_Store
+
+/.idea
+.idea
+*.iml
+.java-version
