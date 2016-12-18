@@ -40,6 +40,13 @@ public class ModelInit {
             session.execute(DataModel.createTable_boolean);
             session.execute(DataModel.createTable_text);
             session.execute(DataModel.createTable_geo);
+            session.execute(DataModel.createTable_latest_int);
+            session.execute(DataModel.createTable_latest_long);
+            session.execute(DataModel.createTable_latest_float);
+            session.execute(DataModel.createTable_latest_double);
+            session.execute(DataModel.createTable_latest_boolean);
+            session.execute(DataModel.createTable_latest_text);
+            session.execute(DataModel.createTable_latest_geo);
             session.execute(DataModel.createIndex_hostMetric);
             session.execute(DataModel.createIndex_hostTags);
             session.execute(DataModel.createIndex_owner);

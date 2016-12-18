@@ -19,6 +19,14 @@ public class DataModel {
     public static final String createTable_text = "CREATE TABLE data_text (host text, metric text, date text, created_at timestamp, received_at timestamp, value text, primary key((host, metric, date), received_at))";
     public static final String createTable_geo = "CREATE TABLE data_geo (host text, metric text, date text, created_at timestamp, received_at timestamp, latitude float, longitude float, primary key((host, metric, date), received_at))";
 
+    public static final String createTable_latest_int = "CREATE TABLE latest_int (host text, metric text, created_at timestamp, received_at timestamp, value int, primary key((host, metric)))";
+    public static final String createTable_latest_long = "CREATE TABLE latest_long (host text, metric text, created_at timestamp, received_at timestamp, value bigint, primary key((host, metric)))";
+    public static final String createTable_latest_float = "CREATE TABLE latest_float (host text, metric text, created_at timestamp, received_at timestamp, value float, primary key((host, metric)))";
+    public static final String createTable_latest_double = "CREATE TABLE latest_double (host text, metric text, created_at timestamp, received_at timestamp, value double, primary key((host, metric)))";
+    public static final String createTable_latest_boolean = "CREATE TABLE latest_boolean (host text, metric text, created_at timestamp, received_at timestamp, value boolean, primary key((host, metric)))";
+    public static final String createTable_latest_text = "CREATE TABLE latest_text (host text, metric text, created_at timestamp, received_at timestamp, value text, primary key((host, metric)))";
+    public static final String createTable_latest_geo = "CREATE TABLE latest_geo (host text, metric text, created_at timestamp, received_at timestamp, latitude float, longitude float, primary key((host, metric)))";
+
     public static final String createIndex_hostMetric = "CREATE INDEX ON host_metric (metric)";
     public static final String createIndex_hostTags = "CREATE INDEX ON host_tags (ENTRIES(tags))";
     public static final String createIndex_owner = "CREATE INDEX ON owner (host)";
