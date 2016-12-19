@@ -8,6 +8,7 @@ import com.sagittarius.bean.result.*;
 import com.sagittarius.bean.table.*;
 import com.sagittarius.read.interfaces.IReader;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -31,7 +32,6 @@ public class Reader implements IReader {
 
     private ResultSet getPointResultSet(List<String> hosts, List<String> metrics, long time, HostMetric.ValueType valueType) {
         String table = null;
-        Mapper mapper = null;
         switch (valueType) {
             case INT:
                 table = "data_int";
@@ -74,12 +74,13 @@ public class Reader implements IReader {
 
         Map<String, List<IntPoint>> result = new HashMap<>();
         for (IntData data : datas) {
-            if (result.containsKey(data.getHost())) {
-                result.get(data.getHost()).add(new IntPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+            String host = data.getHost();
+            if (result.containsKey(host)) {
+                result.get(host).add(new IntPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
             } else {
                 List<IntPoint> points = new ArrayList<>();
                 points.add(new IntPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
-                result.put(data.getHost(), points);
+                result.put(host, points);
             }
         }
 
@@ -94,12 +95,13 @@ public class Reader implements IReader {
 
         Map<String, List<LongPoint>> result = new HashMap<>();
         for (LongData data : datas) {
-            if (result.containsKey(data.getHost())) {
-                result.get(data.getHost()).add(new LongPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+            String host = data.getHost();
+            if (result.containsKey(host)) {
+                result.get(host).add(new LongPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
             } else {
                 List<LongPoint> points = new ArrayList<>();
                 points.add(new LongPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
-                result.put(data.getHost(), points);
+                result.put(host, points);
             }
         }
 
@@ -114,12 +116,13 @@ public class Reader implements IReader {
 
         Map<String, List<FloatPoint>> result = new HashMap<>();
         for (FloatData data : datas) {
-            if (result.containsKey(data.getHost())) {
-                result.get(data.getHost()).add(new FloatPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+            String host = data.getHost();
+            if (result.containsKey(host)) {
+                result.get(host).add(new FloatPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
             } else {
                 List<FloatPoint> points = new ArrayList<>();
                 points.add(new FloatPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
-                result.put(data.getHost(), points);
+                result.put(host, points);
             }
         }
 
@@ -134,12 +137,13 @@ public class Reader implements IReader {
 
         Map<String, List<DoublePoint>> result = new HashMap<>();
         for (DoubleData data : datas) {
-            if (result.containsKey(data.getHost())) {
-                result.get(data.getHost()).add(new DoublePoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+            String host = data.getHost();
+            if (result.containsKey(host)) {
+                result.get(host).add(new DoublePoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
             } else {
                 List<DoublePoint> points = new ArrayList<>();
                 points.add(new DoublePoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
-                result.put(data.getHost(), points);
+                result.put(host, points);
             }
         }
 
@@ -154,12 +158,13 @@ public class Reader implements IReader {
 
         Map<String, List<BooleanPoint>> result = new HashMap<>();
         for (BooleanData data : datas) {
-            if (result.containsKey(data.getHost())) {
-                result.get(data.getHost()).add(new BooleanPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+            String host = data.getHost();
+            if (result.containsKey(host)) {
+                result.get(host).add(new BooleanPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
             } else {
                 List<BooleanPoint> points = new ArrayList<>();
                 points.add(new BooleanPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
-                result.put(data.getHost(), points);
+                result.put(host, points);
             }
         }
 
@@ -174,12 +179,13 @@ public class Reader implements IReader {
 
         Map<String, List<StringPoint>> result = new HashMap<>();
         for (StringData data : datas) {
-            if (result.containsKey(data.getHost())) {
-                result.get(data.getHost()).add(new StringPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+            String host = data.getHost();
+            if (result.containsKey(host)) {
+                result.get(host).add(new StringPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
             } else {
                 List<StringPoint> points = new ArrayList<>();
                 points.add(new StringPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
-                result.put(data.getHost(), points);
+                result.put(host, points);
             }
         }
 
@@ -194,12 +200,190 @@ public class Reader implements IReader {
 
         Map<String, List<GeoPoint>> result = new HashMap<>();
         for (GeoData data : datas) {
-            if (result.containsKey(data.getHost())) {
-                result.get(data.getHost()).add(new GeoPoint(data.getMetric(), data.getReceivedAt(), data.getLatitude(), data.getLongitude()));
+            String host = data.getHost();
+            if (result.containsKey(host)) {
+                result.get(host).add(new GeoPoint(data.getMetric(), data.getReceivedAt(), data.getLatitude(), data.getLongitude()));
             } else {
                 List<GeoPoint> points = new ArrayList<>();
                 points.add(new GeoPoint(data.getMetric(), data.getReceivedAt(), data.getLatitude(), data.getLongitude()));
-                result.put(data.getHost(), points);
+                result.put(host, points);
+            }
+        }
+
+        return result;
+    }
+
+    private ResultSet getLatestResultSet(List<String> hosts, List<String> metrics, HostMetric.ValueType valueType) {
+        String table = null;
+        switch (valueType) {
+            case INT:
+                table = "latest_int";
+                break;
+            case LONG:
+                table = "latest_long";
+                break;
+            case FLOAT:
+                table = "latest_float";
+                break;
+            case DOUBLE:
+                table = "latest_double";
+                break;
+            case BOOLEAN:
+                table = "latest_boolean";
+                break;
+            case STRING:
+                table = "latest_text";
+                break;
+            case GEO:
+                table = "latest_geo";
+                break;
+        }
+
+        SimpleStatement statement = new SimpleStatement(String.format(QueryStatement.LATEST_QUERY_STATEMENT, table, ReadHelper.generateInStatement(hosts), ReadHelper.generateInStatement(metrics)));
+        return session.execute(statement);
+    }
+
+    @Override
+    public Map<String, List<IntPoint>> getIntLatest(List<String> hosts, List<String> metrics) {
+        ResultSet rs = getLatestResultSet(hosts, metrics, HostMetric.ValueType.INT);
+        Mapper<IntLatest> mapper = mappingManager.mapper(IntLatest.class);
+        Result<IntLatest> latests = mapper.map(rs);
+
+        Map<String, List<IntPoint>> result = new HashMap<>();
+        for (IntLatest latest : latests) {
+            String host = latest.getHost();
+            if (result.containsKey(host)) {
+                result.get(host).add(new IntPoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+            } else {
+                List<IntPoint> points = new ArrayList<>();
+                points.add(new IntPoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+                result.put(host, points);
+            }
+        }
+
+        return result;
+    }
+
+    @Override
+    public Map<String, List<LongPoint>> getLongLatest(List<String> hosts, List<String> metrics) {
+        ResultSet rs = getLatestResultSet(hosts, metrics, HostMetric.ValueType.LONG);
+        Mapper<LongLatest> mapper = mappingManager.mapper(LongLatest.class);
+        Result<LongLatest> latests = mapper.map(rs);
+
+        Map<String, List<LongPoint>> result = new HashMap<>();
+        for (LongLatest latest : latests) {
+            String host = latest.getHost();
+            if (result.containsKey(host)) {
+                result.get(host).add(new LongPoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+            } else {
+                List<LongPoint> points = new ArrayList<>();
+                points.add(new LongPoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+                result.put(host, points);
+            }
+        }
+
+        return result;
+    }
+
+    @Override
+    public Map<String, List<FloatPoint>> getFloatLatest(List<String> hosts, List<String> metrics) {
+        ResultSet rs = getLatestResultSet(hosts, metrics, HostMetric.ValueType.FLOAT);
+        Mapper<FloatLatest> mapper = mappingManager.mapper(FloatLatest.class);
+        Result<FloatLatest> latests = mapper.map(rs);
+
+        Map<String, List<FloatPoint>> result = new HashMap<>();
+        for (FloatLatest latest : latests) {
+            String host = latest.getHost();
+            if (result.containsKey(host)) {
+                result.get(host).add(new FloatPoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+            } else {
+                List<FloatPoint> points = new ArrayList<>();
+                points.add(new FloatPoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+                result.put(host, points);
+            }
+        }
+
+        return result;
+    }
+
+    @Override
+    public Map<String, List<DoublePoint>> getDoubleLatest(List<String> hosts, List<String> metrics) {
+        ResultSet rs = getLatestResultSet(hosts, metrics, HostMetric.ValueType.DOUBLE);
+        Mapper<DoubleLatest> mapper = mappingManager.mapper(DoubleLatest.class);
+        Result<DoubleLatest> latests = mapper.map(rs);
+
+        Map<String, List<DoublePoint>> result = new HashMap<>();
+        for (DoubleLatest latest : latests) {
+            String host = latest.getHost();
+            if (result.containsKey(host)) {
+                result.get(host).add(new DoublePoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+            } else {
+                List<DoublePoint> points = new ArrayList<>();
+                points.add(new DoublePoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+                result.put(host, points);
+            }
+        }
+
+        return result;
+    }
+
+    @Override
+    public Map<String, List<BooleanPoint>> getBooleanLatest(List<String> hosts, List<String> metrics) {
+        ResultSet rs = getLatestResultSet(hosts, metrics, HostMetric.ValueType.BOOLEAN);
+        Mapper<BooleanLatest> mapper = mappingManager.mapper(BooleanLatest.class);
+        Result<BooleanLatest> latests = mapper.map(rs);
+
+        Map<String, List<BooleanPoint>> result = new HashMap<>();
+        for (BooleanLatest latest : latests) {
+            String host = latest.getHost();
+            if (result.containsKey(host)) {
+                result.get(host).add(new BooleanPoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+            } else {
+                List<BooleanPoint> points = new ArrayList<>();
+                points.add(new BooleanPoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+                result.put(host, points);
+            }
+        }
+
+        return result;
+    }
+
+    @Override
+    public Map<String, List<StringPoint>> getStringLatest(List<String> hosts, List<String> metrics) {
+        ResultSet rs = getLatestResultSet(hosts, metrics, HostMetric.ValueType.STRING);
+        Mapper<StringLatest> mapper = mappingManager.mapper(StringLatest.class);
+        Result<StringLatest> latests = mapper.map(rs);
+
+        Map<String, List<StringPoint>> result = new HashMap<>();
+        for (StringLatest latest : latests) {
+            String host = latest.getHost();
+            if (result.containsKey(host)) {
+                result.get(host).add(new StringPoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+            } else {
+                List<StringPoint> points = new ArrayList<>();
+                points.add(new StringPoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+                result.put(host, points);
+            }
+        }
+
+        return result;
+    }
+
+    @Override
+    public Map<String, List<GeoPoint>> getGeoLatest(List<String> hosts, List<String> metrics) {
+        ResultSet rs = getLatestResultSet(hosts, metrics, HostMetric.ValueType.GEO);
+        Mapper<GeoLatest> mapper = mappingManager.mapper(GeoLatest.class);
+        Result<GeoLatest> latests = mapper.map(rs);
+
+        Map<String, List<GeoPoint>> result = new HashMap<>();
+        for (GeoLatest latest : latests) {
+            String host = latest.getHost();
+            if (result.containsKey(host)) {
+                result.get(host).add(new GeoPoint(latest.getMetric(), latest.getReceivedAt(), latest.getLatitude(), latest.getLongitude()));
+            } else {
+                List<GeoPoint> points = new ArrayList<>();
+                points.add(new GeoPoint(latest.getMetric(), latest.getReceivedAt(), latest.getLatitude(), latest.getLongitude()));
+                result.put(host, points);
             }
         }
 
