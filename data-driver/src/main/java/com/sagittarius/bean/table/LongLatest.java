@@ -17,8 +17,8 @@ public class LongLatest extends AbstractLatest {
     public LongLatest() {
     }
 
-    public LongLatest(String host, String metric, long createdAt, long receivedAt, long value) {
-        super(host, metric, createdAt, receivedAt);
+    public LongLatest(String host, String metric, long primaryTime, long secondaryTime, long value) {
+        super(host, metric, primaryTime, secondaryTime);
         this.value = value;
     }
 

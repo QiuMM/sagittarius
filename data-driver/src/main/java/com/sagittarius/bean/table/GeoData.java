@@ -15,8 +15,8 @@ public class GeoData extends AbstractData {
     private float latitude;
     private float longitude;
 
-    public GeoData(String host, String metric, String date, long createdAt, long receivedAt, float latitude, float longitude) {
-        super(host, metric, date, createdAt, receivedAt);
+    public GeoData(String host, String metric, String date, long primaryTime, long secondaryTime, float latitude, float longitude) {
+        super(host, metric, date, primaryTime, secondaryTime);
         this.latitude = latitude;
         this.longitude = longitude;
     }

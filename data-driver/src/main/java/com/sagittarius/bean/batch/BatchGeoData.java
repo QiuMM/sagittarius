@@ -22,8 +22,8 @@ public class BatchGeoData {
         return datas;
     }
 
-    public void add(String host, String metric, long createdAt, long receivedAt, HostMetric.DateInterval dateInterval, float latitude, float longitude) {
-        String date = TimeUtil.getDate(receivedAt, dateInterval);
-        datas.add(new GeoData(host, metric, date, createdAt, receivedAt, latitude, longitude));
+    public void add(String host, String metric, long primaryTime, long secondaryTime, HostMetric.DateInterval dateInterval, float latitude, float longitude) {
+        String date = TimeUtil.getDate(primaryTime, dateInterval);
+        datas.add(new GeoData(host, metric, date, primaryTime, secondaryTime, latitude, longitude));
     }
 }

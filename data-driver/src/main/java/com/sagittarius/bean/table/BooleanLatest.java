@@ -14,8 +14,8 @@ import com.datastax.driver.mapping.annotations.Table;
 public class BooleanLatest extends AbstractLatest {
     private boolean value;
 
-    public BooleanLatest(String host, String metric, long createdAt, long receivedAt, boolean value) {
-        super(host, metric, createdAt, receivedAt);
+    public BooleanLatest(String host, String metric, long primaryTime, long secondaryTime, boolean value) {
+        super(host, metric, primaryTime, secondaryTime);
         this.value = value;
     }
 

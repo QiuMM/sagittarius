@@ -22,8 +22,8 @@ public class BatchFloatData {
         return datas;
     }
 
-    public void add(String host, String metric, long createdAt, long receivedAt, HostMetric.DateInterval dateInterval, float value) {
-        String date = TimeUtil.getDate(receivedAt, dateInterval);
-        datas.add(new FloatData(host, metric, date, createdAt, receivedAt, value));
+    public void add(String host, String metric, long primaryTime, long secondaryTime, HostMetric.DateInterval dateInterval, float value) {
+        String date = TimeUtil.getDate(primaryTime, dateInterval);
+        datas.add(new FloatData(host, metric, date, primaryTime, secondaryTime, value));
     }
 }

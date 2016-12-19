@@ -22,8 +22,8 @@ public class BatchLongData {
         return datas;
     }
 
-    public void add(String host, String metric, long createdAt, long receivedAt, HostMetric.DateInterval dateInterval, long value) {
-        String date = TimeUtil.getDate(receivedAt, dateInterval);
-        datas.add(new LongData(host, metric, date, createdAt, receivedAt, value));
+    public void add(String host, String metric, long primaryTime, long secondaryTime, HostMetric.DateInterval dateInterval, long value) {
+        String date = TimeUtil.getDate(primaryTime, dateInterval);
+        datas.add(new LongData(host, metric, date, primaryTime, secondaryTime, value));
     }
 }

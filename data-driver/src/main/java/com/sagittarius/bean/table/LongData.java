@@ -17,8 +17,8 @@ public class LongData extends AbstractData {
     public LongData() {
     }
 
-    public LongData(String host, String metric, String date, long createdAt, long receivedAt, long value) {
-        super(host, metric, date, createdAt, receivedAt);
+    public LongData(String host, String metric, String date, long primaryTime, long secondaryTime, long value) {
+        super(host, metric, date, primaryTime, secondaryTime);
         this.value = value;
     }
 

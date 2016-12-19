@@ -14,8 +14,8 @@ import com.datastax.driver.mapping.annotations.Table;
 public class IntData extends AbstractData {
     private int value;
 
-    public IntData(String host, String metric, String date, long createdAt, long receivedAt, int value) {
-        super(host, metric, date, createdAt, receivedAt);
+    public IntData(String host, String metric, String date, long primaryTime, long secondaryTime, int value) {
+        super(host, metric, date, primaryTime, secondaryTime);
         this.value = value;
     }
 

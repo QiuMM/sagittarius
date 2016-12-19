@@ -14,8 +14,8 @@ import com.datastax.driver.mapping.annotations.Table;
 public class BooleanData extends AbstractData {
     private boolean value;
 
-    public BooleanData(String host, String metric, String date, long createdAt, long receivedAt, boolean value) {
-        super(host, metric, date, createdAt, receivedAt);
+    public BooleanData(String host, String metric, String date, long primaryTime, long secondaryTime, boolean value) {
+        super(host, metric, date, primaryTime, secondaryTime);
         this.value = value;
     }
 

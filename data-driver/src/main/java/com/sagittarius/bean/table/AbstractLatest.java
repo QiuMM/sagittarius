@@ -9,14 +9,14 @@ import com.datastax.driver.mapping.annotations.PartitionKey;
 public class AbstractLatest {
     private String host;
     private String metric;
-    private long createdAt;
-    private long receivedAt;
+    private long primaryTime;
+    private long secondaryTime;
 
-    public AbstractLatest(String host, String metric, long createdAt, long receivedAt) {
+    public AbstractLatest(String host, String metric, long primaryTime, long secondaryTime) {
         this.host = host;
         this.metric = metric;
-        this.createdAt = createdAt;
-        this.receivedAt = receivedAt;
+        this.primaryTime = primaryTime;
+        this.secondaryTime = secondaryTime;
     }
 
     public AbstractLatest() {
@@ -42,21 +42,21 @@ public class AbstractLatest {
         this.metric = metric;
     }
 
-    @Column(name = "created_at")
-    public long getCreatedAt() {
-        return createdAt;
+    @Column(name = "primary_time")
+    public long getPrimaryTime() {
+        return primaryTime;
     }
 
-    public void setCreatedAt(long createdAt) {
-        this.createdAt = createdAt;
+    public void setPrimaryTime(long primaryTime) {
+        this.primaryTime = primaryTime;
     }
 
-    @Column(name = "received_at")
-    public long getReceivedAt() {
-        return receivedAt;
+    @Column(name = "secondary_time")
+    public long getSecondaryTime() {
+        return secondaryTime;
     }
 
-    public void setReceivedAt(long receivedAt) {
-        this.receivedAt = receivedAt;
+    public void setSecondaryTime(long secondaryTime) {
+        this.secondaryTime = secondaryTime;
     }
 }

@@ -14,8 +14,8 @@ import com.datastax.driver.mapping.annotations.Table;
 public class StringLatest extends AbstractLatest {
     private String value;
 
-    public StringLatest(String host, String metric, long createdAt, long receivedAt, String value) {
-        super(host, metric, createdAt, receivedAt);
+    public StringLatest(String host, String metric, long primaryTime, long secondaryTime, String value) {
+        super(host, metric, primaryTime, secondaryTime);
         this.value = value;
     }
 

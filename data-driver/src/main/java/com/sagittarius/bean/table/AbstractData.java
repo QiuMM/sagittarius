@@ -11,18 +11,18 @@ public abstract class AbstractData {
     private String host;
     private String metric;
     private String date;
-    private long createdAt;
-    private long receivedAt;
+    private long primaryTime;
+    private long secondaryTime;
 
     public AbstractData() {
     }
 
-    public AbstractData(String host, String metric, String date, long createdAt, long receivedAt) {
+    public AbstractData(String host, String metric, String date, long primaryTime, long secondaryTime) {
         this.host = host;
         this.metric = metric;
         this.date = date;
-        this.createdAt = createdAt;
-        this.receivedAt = receivedAt;
+        this.primaryTime = primaryTime;
+        this.secondaryTime = secondaryTime;
     }
 
     @PartitionKey(0)
@@ -55,22 +55,22 @@ public abstract class AbstractData {
         this.date = date;
     }
 
-    @Column(name = "created_at")
-    public long getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(long createdAt) {
-        this.createdAt = createdAt;
-    }
-
     @ClusteringColumn
-    @Column(name = "received_at")
-    public long getReceivedAt() {
-        return receivedAt;
+    @Column(name = "primary_time")
+    public long getPrimaryTime() {
+        return primaryTime;
     }
 
-    public void setReceivedAt(long receivedAt) {
-        this.receivedAt = receivedAt;
+    public void setPrimaryTime(long primaryTime) {
+        this.primaryTime = primaryTime;
+    }
+
+    @Column(name = "secondary_time")
+    public long getSecondaryTime() {
+        return secondaryTime;
+    }
+
+    public void setSecondaryTime(long secondaryTime) {
+        this.secondaryTime = secondaryTime;
     }
 }

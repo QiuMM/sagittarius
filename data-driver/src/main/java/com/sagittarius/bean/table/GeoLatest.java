@@ -15,8 +15,8 @@ public class GeoLatest extends AbstractLatest {
     private float latitude;
     private float longitude;
 
-    public GeoLatest(String host, String metric, long createdAt, long receivedAt, float latitude, float longitude) {
-        super(host, metric, createdAt, receivedAt);
+    public GeoLatest(String host, String metric, long primaryTime, long secondaryTime, float latitude, float longitude) {
+        super(host, metric, primaryTime, secondaryTime);
         this.latitude = latitude;
         this.longitude = longitude;
     }

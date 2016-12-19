@@ -13,8 +13,8 @@ import com.datastax.driver.mapping.annotations.Table;
 public class IntLatest extends AbstractLatest {
     private int value;
 
-    public IntLatest(String host, String metric, long createdAt, long receivedAt, int value) {
-        super(host, metric, createdAt, receivedAt);
+    public IntLatest(String host, String metric, long primaryTime, long secondaryTime, int value) {
+        super(host, metric, primaryTime, secondaryTime);
         this.value = value;
     }
 

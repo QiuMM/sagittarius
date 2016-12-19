@@ -77,10 +77,10 @@ public class Reader implements IReader {
         for (IntData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new IntPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                result.get(host).add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
             } else {
                 List<IntPoint> points = new ArrayList<>();
-                points.add(new IntPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                points.add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -98,10 +98,10 @@ public class Reader implements IReader {
         for (LongData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new LongPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                result.get(host).add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
             } else {
                 List<LongPoint> points = new ArrayList<>();
-                points.add(new LongPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                points.add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -119,10 +119,10 @@ public class Reader implements IReader {
         for (FloatData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new FloatPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                result.get(host).add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
             } else {
                 List<FloatPoint> points = new ArrayList<>();
-                points.add(new FloatPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                points.add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -140,10 +140,10 @@ public class Reader implements IReader {
         for (DoubleData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new DoublePoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                result.get(host).add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
             } else {
                 List<DoublePoint> points = new ArrayList<>();
-                points.add(new DoublePoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                points.add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -161,10 +161,10 @@ public class Reader implements IReader {
         for (BooleanData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new BooleanPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                result.get(host).add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
             } else {
                 List<BooleanPoint> points = new ArrayList<>();
-                points.add(new BooleanPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                points.add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -182,10 +182,10 @@ public class Reader implements IReader {
         for (StringData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new StringPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                result.get(host).add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
             } else {
                 List<StringPoint> points = new ArrayList<>();
-                points.add(new StringPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                points.add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -203,10 +203,10 @@ public class Reader implements IReader {
         for (GeoData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new GeoPoint(data.getMetric(), data.getReceivedAt(), data.getLatitude(), data.getLongitude()));
+                result.get(host).add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getLatitude(), data.getLongitude()));
             } else {
                 List<GeoPoint> points = new ArrayList<>();
-                points.add(new GeoPoint(data.getMetric(), data.getReceivedAt(), data.getLatitude(), data.getLongitude()));
+                points.add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getLatitude(), data.getLongitude()));
                 result.put(host, points);
             }
         }
@@ -254,10 +254,10 @@ public class Reader implements IReader {
         for (IntLatest latest : latests) {
             String host = latest.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new IntPoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+                result.get(host).add(new IntPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
             } else {
                 List<IntPoint> points = new ArrayList<>();
-                points.add(new IntPoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+                points.add(new IntPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
                 result.put(host, points);
             }
         }
@@ -275,10 +275,10 @@ public class Reader implements IReader {
         for (LongLatest latest : latests) {
             String host = latest.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new LongPoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+                result.get(host).add(new LongPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
             } else {
                 List<LongPoint> points = new ArrayList<>();
-                points.add(new LongPoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+                points.add(new LongPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
                 result.put(host, points);
             }
         }
@@ -296,10 +296,10 @@ public class Reader implements IReader {
         for (FloatLatest latest : latests) {
             String host = latest.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new FloatPoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+                result.get(host).add(new FloatPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
             } else {
                 List<FloatPoint> points = new ArrayList<>();
-                points.add(new FloatPoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+                points.add(new FloatPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
                 result.put(host, points);
             }
         }
@@ -317,10 +317,10 @@ public class Reader implements IReader {
         for (DoubleLatest latest : latests) {
             String host = latest.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new DoublePoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+                result.get(host).add(new DoublePoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
             } else {
                 List<DoublePoint> points = new ArrayList<>();
-                points.add(new DoublePoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+                points.add(new DoublePoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
                 result.put(host, points);
             }
         }
@@ -338,10 +338,10 @@ public class Reader implements IReader {
         for (BooleanLatest latest : latests) {
             String host = latest.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new BooleanPoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+                result.get(host).add(new BooleanPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
             } else {
                 List<BooleanPoint> points = new ArrayList<>();
-                points.add(new BooleanPoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+                points.add(new BooleanPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
                 result.put(host, points);
             }
         }
@@ -359,10 +359,10 @@ public class Reader implements IReader {
         for (StringLatest latest : latests) {
             String host = latest.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new StringPoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+                result.get(host).add(new StringPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
             } else {
                 List<StringPoint> points = new ArrayList<>();
-                points.add(new StringPoint(latest.getMetric(), latest.getReceivedAt(), latest.getValue()));
+                points.add(new StringPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
                 result.put(host, points);
             }
         }
@@ -380,10 +380,10 @@ public class Reader implements IReader {
         for (GeoLatest latest : latests) {
             String host = latest.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new GeoPoint(latest.getMetric(), latest.getReceivedAt(), latest.getLatitude(), latest.getLongitude()));
+                result.get(host).add(new GeoPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getLatitude(), latest.getLongitude()));
             } else {
                 List<GeoPoint> points = new ArrayList<>();
-                points.add(new GeoPoint(latest.getMetric(), latest.getReceivedAt(), latest.getLatitude(), latest.getLongitude()));
+                points.add(new GeoPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getLatitude(), latest.getLongitude()));
                 result.put(host, points);
             }
         }
@@ -436,10 +436,10 @@ public class Reader implements IReader {
         for (IntData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new IntPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                result.get(host).add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
             } else {
                 List<IntPoint> points = new ArrayList<>();
-                points.add(new IntPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                points.add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -462,10 +462,10 @@ public class Reader implements IReader {
         for (LongData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new LongPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                result.get(host).add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
             } else {
                 List<LongPoint> points = new ArrayList<>();
-                points.add(new LongPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                points.add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -488,10 +488,10 @@ public class Reader implements IReader {
         for (FloatData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new FloatPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                result.get(host).add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
             } else {
                 List<FloatPoint> points = new ArrayList<>();
-                points.add(new FloatPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                points.add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -514,10 +514,10 @@ public class Reader implements IReader {
         for (DoubleData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new DoublePoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                result.get(host).add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
             } else {
                 List<DoublePoint> points = new ArrayList<>();
-                points.add(new DoublePoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                points.add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -540,10 +540,10 @@ public class Reader implements IReader {
         for (BooleanData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new BooleanPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                result.get(host).add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
             } else {
                 List<BooleanPoint> points = new ArrayList<>();
-                points.add(new BooleanPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                points.add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -566,10 +566,10 @@ public class Reader implements IReader {
         for (StringData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new StringPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                result.get(host).add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
             } else {
                 List<StringPoint> points = new ArrayList<>();
-                points.add(new StringPoint(data.getMetric(), data.getReceivedAt(), data.getValue()));
+                points.add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -592,10 +592,10 @@ public class Reader implements IReader {
         for (GeoData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new GeoPoint(data.getMetric(), data.getReceivedAt(), data.getLatitude(), data.getLongitude()));
+                result.get(host).add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getLatitude(), data.getLongitude()));
             } else {
                 List<GeoPoint> points = new ArrayList<>();
-                points.add(new GeoPoint(data.getMetric(), data.getReceivedAt(), data.getLatitude(), data.getLongitude()));
+                points.add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getLatitude(), data.getLongitude()));
                 result.put(host, points);
             }
         }

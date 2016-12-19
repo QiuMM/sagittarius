@@ -17,19 +17,19 @@ public interface IWriter {
 
     void registerOwnerInfo(String user, List<String> hosts);
 
-    void insert(String host, String metric, long createdAt, long receivedAt, DateInterval dateInterval, int value);
+    void insert(String host, String metric, long primaryTime, long secondaryTime, DateInterval dateInterval, int value);
 
-    void insert(String host, String metric, long createdAt, long receivedAt, DateInterval dateInterval, long value);
+    void insert(String host, String metric, long primaryTime, long secondaryTime, DateInterval dateInterval, long value);
 
-    void insert(String host, String metric, long createdAt, long receivedAt, DateInterval dateInterval, float value);
+    void insert(String host, String metric, long primaryTime, long secondaryTime, DateInterval dateInterval, float value);
 
-    void insert(String host, String metric, long createdAt, long receivedAt, DateInterval dateInterval, double value);
+    void insert(String host, String metric, long primaryTime, long secondaryTime, DateInterval dateInterval, double value);
 
-    void insert(String host, String metric, long createdAt, long receivedAt, DateInterval dateInterval, boolean value);
+    void insert(String host, String metric, long primaryTime, long secondaryTime, DateInterval dateInterval, boolean value);
 
-    void insert(String host, String metric, long createdAt, long receivedAt, DateInterval dateInterval, String value);
+    void insert(String host, String metric, long primaryTime, long secondaryTime, DateInterval dateInterval, String value);
 
-    void insert(String host, String metric, long createdAt, long receivedAt, DateInterval dateInterval, float latitude, float longitude);
+    void insert(String host, String metric, long primaryTime, long secondaryTime, DateInterval dateInterval, float latitude, float longitude);
 
     void batchInsert(BatchIntData batchIntData);
 
