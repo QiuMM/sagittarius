@@ -10,17 +10,14 @@ import com.datastax.driver.mapping.Result;
 import com.sagittarius.bean.table.HostMetric;
 import com.sagittarius.util.TimeUtil;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Created by qmm on 2016/12/17.
  */
 public class ReadHelper {
 
-    public static String generateInStatement(List<String> params) {
+    public static String generateInStatement(Collection<String> params) {
         StringBuilder sb = new StringBuilder();
         for (String param : params) {
             sb.append("'").append(param).append("'").append(",");
@@ -29,26 +26,31 @@ public class ReadHelper {
         return sb.toString();
     }
 
-    public static Map<String, List<String>> getDatePartedMetrics(Session session, MappingManager mappingManager, List<String> hosts, List<String> metrics, long time) {
-        Mapper<HostMetric> mapper = mappingManager.mapper(HostMetric.class);
-        Map<String, List<String>> dateMetrics = new HashMap<>();
+    public static Map<String, Map<String, Set<String>>> getDatePartedHostMetric(Result<HostMetric> hostMetrics, long time) {
+        Map<String, Map<String, Set<String>>> dateHostMetric = new HashMap<>();
 
-        Result<HostMetric> hostMetrics = getHostMetrics(session, mapper, hosts, metrics);
         for (HostMetric hostMetric : hostMetrics) {
             String date = TimeUtil.getDate(time, hostMetric.getDateInterval());
-            if (dateMetrics.containsKey(date)) {
-                dateMetrics.get(date).add(hostMetric.getMetric());
+            if (dateHostMetric.containsKey(date)) {
+                Map<String, Set<String>> setMap = dateHostMetric.get(date);
+                setMap.get("hosts").add(hostMetric.getHost());
+                setMap.get("metrics").add(hostMetric.getMetric());
             } else {
-                List<String> metricList = new ArrayList<>();
-                metricList.add(hostMetric.getMetric());
-                dateMetrics.put(date, metricList);
+                Map<String, Set<String>> setMap = new HashMap<>();
+                Set<String> hostSet = new HashSet<>();
+                Set<String> metricSet = new HashSet<>();
+                hostSet.add(hostMetric.getHost());
+                metricSet.add(hostMetric.getMetric());
+                setMap.put("hosts", hostSet);
+                setMap.put("metrics", metricSet);
+                dateHostMetric.put(date, setMap);
             }
         }
 
-        return dateMetrics;
+        return dateHostMetric;
     }
 
-    private static Result<HostMetric> getHostMetrics(Session session, Mapper<HostMetric> mapper, List<String> hosts, List<String> metrics) {
+    public static Result<HostMetric> getHostMetrics(Session session, Mapper<HostMetric> mapper, List<String> hosts, List<String> metrics) {
         Statement statement = new SimpleStatement(String.format(QueryStatement.HOST_METRIC_QUERY_STATEMENT, generateInStatement(hosts), generateInStatement(metrics)));
         ResultSet rs = session.execute(statement);
         return mapper.map(rs);
