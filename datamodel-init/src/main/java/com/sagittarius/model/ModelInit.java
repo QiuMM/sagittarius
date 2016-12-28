@@ -11,12 +11,15 @@ import org.slf4j.LoggerFactory;
 public class ModelInit {
     private static final Logger logger = LoggerFactory.getLogger(ModelInit.class);
 
+    /**
+     * @param args args[0] is cassandra contact point while args[1] is the port,
+     *             args[2] is replication strategy and args[3] is replication factor,
+     *             args[4] is credential user name and args[5] is the password.
+     */
     public static void main(String[] args) {
         Cluster cluster = null;
         try {
-            /**
-             * connect cassandra cluster
-             */
+            //connect cassandra cluster
             SocketOptions socketOptions = new SocketOptions().setConnectTimeoutMillis(10000).setReadTimeoutMillis(30000);
             QueryOptions queryOptions = new QueryOptions().setConsistencyLevel(ConsistencyLevel.ALL);
             Cluster.Builder builder = Cluster.builder().addContactPoint(args[0]).withPort(Integer.parseInt(args[1])).withSocketOptions(socketOptions).withQueryOptions(queryOptions);
@@ -25,9 +28,8 @@ public class ModelInit {
             }
             cluster = builder.build();
             Session session = cluster.connect();
-            /**
-             * data model initial
-             */
+
+            //data model initial
             session.execute(String.format(DataModel.createKeyspace, args[2], args[3]));
             session.execute("USE sagittarius");
             session.execute(DataModel.createTable_hostMetric);
@@ -40,13 +42,7 @@ public class ModelInit {
             session.execute(DataModel.createTable_boolean);
             session.execute(DataModel.createTable_text);
             session.execute(DataModel.createTable_geo);
-            session.execute(DataModel.createTable_latest_int);
-            session.execute(DataModel.createTable_latest_long);
-            session.execute(DataModel.createTable_latest_float);
-            session.execute(DataModel.createTable_latest_double);
-            session.execute(DataModel.createTable_latest_boolean);
-            session.execute(DataModel.createTable_latest_text);
-            session.execute(DataModel.createTable_latest_geo);
+            session.execute(DataModel.createTable_latest);
             session.execute(DataModel.createIndex_hostMetric);
             session.execute(DataModel.createIndex_hostTags);
             session.execute(DataModel.createIndex_owner);
