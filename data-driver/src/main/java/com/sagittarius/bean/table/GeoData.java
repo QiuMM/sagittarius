@@ -4,8 +4,7 @@ import com.datastax.driver.mapping.annotations.Column;
 import com.datastax.driver.mapping.annotations.Table;
 
 /**
- * Created by qmm on 2016/12/15.
- * class map to table data_geo
+ * class map to cassandra table data_geo
  */
 
 @Table(name = "data_geo",
@@ -15,8 +14,8 @@ public class GeoData extends AbstractData {
     private float latitude;
     private float longitude;
 
-    public GeoData(String host, String metric, String date, long primaryTime, long secondaryTime, float latitude, float longitude) {
-        super(host, metric, date, primaryTime, secondaryTime);
+    public GeoData(String host, String metric, String timeSlice, long primaryTime, Long secondaryTime, float latitude, float longitude) {
+        super(host, metric, timeSlice, primaryTime, secondaryTime);
         this.latitude = latitude;
         this.longitude = longitude;
     }

@@ -2,37 +2,42 @@ package com.sagittarius.core;
 
 import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.Session;
+import com.datastax.driver.extras.codecs.date.SimpleTimestampCodec;
 import com.datastax.driver.extras.codecs.enums.EnumNameCodec;
 import com.datastax.driver.mapping.MappingManager;
-import com.sagittarius.bean.table.HostMetric;
+import com.sagittarius.bean.common.TimePartition;
+import com.sagittarius.bean.common.ValueType;
 import com.sagittarius.read.Reader;
+import com.sagittarius.read.SagittariusReader;
+import com.sagittarius.write.SagittariusWriter;
 import com.sagittarius.write.Writer;
 
 /**
- * Created by qmm on 2016/12/15.
+ * client which expose interfaces to user
  */
 public class SagittariusClient {
-    private Cluster cluster;
     private Session session;
     private MappingManager mappingManager;
 
-    private SagittariusClient(Cluster cluster) {
-        this.cluster = cluster;
-        cluster.getConfiguration().getCodecRegistry().register(new EnumNameCodec<HostMetric.DateInterval>(HostMetric.DateInterval.class)).register(new EnumNameCodec<HostMetric.ValueType>(HostMetric.ValueType.class));
+    public SagittariusClient(Cluster cluster) {
+        cluster.getConfiguration().getCodecRegistry()
+                .register(new EnumNameCodec<>(TimePartition.class))
+                .register(new EnumNameCodec<>(ValueType.class))
+                .register(new SimpleTimestampCodec());
         this.session = cluster.connect("sagittarius");
         this.mappingManager = new MappingManager(session);
     }
 
-    public static SagittariusClient createInstance(Cluster cluster) {
-        return new SagittariusClient(cluster);
+    public Session getSession() {
+        return session;
     }
 
     public Writer getWriter() {
-        return new Writer(session, mappingManager);
+        return new SagittariusWriter(session, mappingManager);
     }
 
     public Reader getReader() {
-        return new Reader(session, mappingManager);
+        return new SagittariusReader(session, mappingManager);
     }
 
     public void close() {

@@ -5,7 +5,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Created by qmm on 2016/12/14.
  * create data tables and indexes in Cassandra
  */
 public class ModelInit {

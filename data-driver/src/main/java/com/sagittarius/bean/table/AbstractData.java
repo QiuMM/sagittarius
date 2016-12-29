@@ -5,22 +5,24 @@ import com.datastax.driver.mapping.annotations.Column;
 import com.datastax.driver.mapping.annotations.PartitionKey;
 
 /**
- * Created by qmm on 2016/12/15.
+ * basic fields for cassandra data tables
  */
 public abstract class AbstractData {
     private String host;
     private String metric;
-    private String date;
+    private String timeSlice;
     private long primaryTime;
-    private long secondaryTime;
+    //secondaryTime use boxed type so it can be set to null and won't be store in cassandra.
+    //see com.datastax.driver.mapping.Mapper : saveNullFields
+    private Long secondaryTime;
 
     public AbstractData() {
     }
 
-    public AbstractData(String host, String metric, String date, long primaryTime, long secondaryTime) {
+    public AbstractData(String host, String metric, String timeSlice, long primaryTime, Long secondaryTime) {
         this.host = host;
         this.metric = metric;
-        this.date = date;
+        this.timeSlice = timeSlice;
         this.primaryTime = primaryTime;
         this.secondaryTime = secondaryTime;
     }
@@ -46,13 +48,13 @@ public abstract class AbstractData {
     }
 
     @PartitionKey(2)
-    @Column(name = "date")
-    public String getDate() {
-        return date;
+    @Column(name = "time_slice")
+    public String getTimeSlice() {
+        return timeSlice;
     }
 
-    public void setDate(String date) {
-        this.date = date;
+    public void setTimeSlice(String timeSlice) {
+        this.timeSlice = timeSlice;
     }
 
     @ClusteringColumn
@@ -66,11 +68,11 @@ public abstract class AbstractData {
     }
 
     @Column(name = "secondary_time")
-    public long getSecondaryTime() {
+    public Long getSecondaryTime() {
         return secondaryTime;
     }
 
-    public void setSecondaryTime(long secondaryTime) {
+    public void setSecondaryTime(Long secondaryTime) {
         this.secondaryTime = secondaryTime;
     }
 }

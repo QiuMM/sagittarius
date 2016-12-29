@@ -4,8 +4,7 @@ import com.datastax.driver.mapping.annotations.Column;
 import com.datastax.driver.mapping.annotations.Table;
 
 /**
- * Created by qmm on 2016/12/15.
- * class map to table data_text
+ * class map to cassandra table data_text
  */
 
 @Table(name = "data_text",
@@ -14,12 +13,12 @@ import com.datastax.driver.mapping.annotations.Table;
 public class StringData extends AbstractData {
     private String value;
 
-    public StringData(String host, String metric, String date, long primaryTime, long secondaryTime, String value) {
-        super(host, metric, date, primaryTime, secondaryTime);
-        this.value = value;
+    public StringData() {
     }
 
-    public StringData() {
+    public StringData(String host, String metric, String timeSlice, long primaryTime, Long secondaryTime, String value) {
+        super(host, metric, timeSlice, primaryTime, secondaryTime);
+        this.value = value;
     }
 
     @Column(name = "value")

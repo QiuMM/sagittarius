@@ -4,8 +4,7 @@ import com.datastax.driver.mapping.annotations.Column;
 import com.datastax.driver.mapping.annotations.Table;
 
 /**
- * Created by qmm on 2016/12/15.
- * class map to table data_double
+ * class map to cassandra table data_double
  */
 
 @Table(name = "data_double",
@@ -14,8 +13,8 @@ import com.datastax.driver.mapping.annotations.Table;
 public class DoubleData extends AbstractData {
     private double value;
 
-    public DoubleData(String host, String metric, String date, long primaryTime, long secondaryTime, double value) {
-        super(host, metric, date, primaryTime, secondaryTime);
+    public DoubleData(String host, String metric, String timeSlice, long primaryTime, Long secondaryTime, double value) {
+        super(host, metric, timeSlice, primaryTime, secondaryTime);
         this.value = value;
     }
 

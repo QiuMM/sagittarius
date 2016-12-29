@@ -4,8 +4,7 @@ import com.datastax.driver.mapping.annotations.Column;
 import com.datastax.driver.mapping.annotations.Table;
 
 /**
- * Created by qmm on 2016/12/15.
- * class map to table data_long
+ * class map to cassandra table data_long
  */
 
 @Table(name = "data_long",
@@ -17,8 +16,8 @@ public class LongData extends AbstractData {
     public LongData() {
     }
 
-    public LongData(String host, String metric, String date, long primaryTime, long secondaryTime, long value) {
-        super(host, metric, date, primaryTime, secondaryTime);
+    public LongData(String host, String metric, String timeSlice, long primaryTime, Long secondaryTime, long value) {
+        super(host, metric, timeSlice, primaryTime, secondaryTime);
         this.value = value;
     }
 

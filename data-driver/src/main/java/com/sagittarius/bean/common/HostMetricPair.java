@@ -1,8 +1,5 @@
 package com.sagittarius.bean.common;
 
-/**
- * Created by qmm on 2016/12/19.
- */
 public class HostMetricPair {
     private String host;
     private String metric;

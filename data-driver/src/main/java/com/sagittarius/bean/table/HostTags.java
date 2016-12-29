@@ -7,8 +7,7 @@ import com.datastax.driver.mapping.annotations.Table;
 import java.util.Map;
 
 /**
- * Created by qmm on 2016/12/15.
- * class map to table host_tags
+ * class map to cassandra table host_tags
  */
 @Table(name = "host_tags",
         readConsistency = "QUORUM",

@@ -1,17 +1,14 @@
 package com.sagittarius.util;
 
-import com.sagittarius.bean.table.HostMetric;
+import com.sagittarius.bean.common.TimePartition;
 
 import java.util.Calendar;
 
-/**
- * Created by qmm on 2016/12/15.
- */
 public class TimeUtil {
-    public static String getDate(long timeMillis, HostMetric.DateInterval dateInterval) {
+    public static String generateTimeSlice(long timeMillis, TimePartition timePartition) {
         Calendar calendar = Calendar.getInstance();
         calendar.setTimeInMillis(timeMillis);
-        switch (dateInterval) {
+        switch (timePartition) {
             case DAY:
                 return calendar.get(Calendar.YEAR ) + "D" + calendar.get(Calendar.DAY_OF_YEAR);
             case WEEK:

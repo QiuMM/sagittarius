@@ -6,8 +6,7 @@ import com.datastax.driver.mapping.annotations.PartitionKey;
 import com.datastax.driver.mapping.annotations.Table;
 
 /**
- * Created by qmm on 2016/12/15.
- * class map to table owner
+ * class map to cassandra table owner
  */
 
 @Table(name = "owner",
@@ -23,7 +22,6 @@ public class Owner {
     }
 
     public Owner() {
-
     }
 
     @PartitionKey

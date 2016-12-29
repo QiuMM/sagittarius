@@ -4,30 +4,31 @@ import com.datastax.driver.mapping.annotations.ClusteringColumn;
 import com.datastax.driver.mapping.annotations.Column;
 import com.datastax.driver.mapping.annotations.PartitionKey;
 import com.datastax.driver.mapping.annotations.Table;
+import com.sagittarius.bean.common.TimePartition;
+import com.sagittarius.bean.common.ValueType;
 
 /**
- * Created by qmm on 2016/12/15.
- * class map to table host_metric
+ * class map to cassandra table host_metric
  */
-
 @Table(name = "host_metric",
         readConsistency = "QUORUM",
         writeConsistency = "QUORUM")
 public class HostMetric {
     private String host;
     private String metric;
-    private DateInterval dateInterval;
+    private TimePartition timePartition;
     private ValueType valueType;
+    private String description;
 
-    public HostMetric(String host, String metric, DateInterval dateInterval, ValueType valueType) {
+    public HostMetric(String host, String metric, TimePartition timePartition, ValueType valueType, String description) {
         this.host = host;
         this.metric = metric;
-        this.dateInterval = dateInterval;
+        this.timePartition = timePartition;
         this.valueType = valueType;
+        this.description = description;
     }
 
     public HostMetric() {
-
     }
 
     @PartitionKey
@@ -50,13 +51,13 @@ public class HostMetric {
         this.metric = metric;
     }
 
-    @Column(name = "date_interval")
-    public DateInterval getDateInterval() {
-        return dateInterval;
+    @Column(name = "time_partition")
+    public TimePartition getTimePartition() {
+        return timePartition;
     }
 
-    public void setDateInterval(DateInterval dateInterval) {
-        this.dateInterval = dateInterval;
+    public void setTimePartition(TimePartition timePartition) {
+        this.timePartition = timePartition;
     }
 
     @Column(name = "value_type")
@@ -68,11 +69,12 @@ public class HostMetric {
         this.valueType = valueType;
     }
 
-    public static enum DateInterval {
-        DAY, WEEK, MONTH, YEAR
+    @Column(name = "description")
+    public String getDescription() {
+        return description;
     }
 
-    public static enum ValueType {
-        INT, LONG, FLOAT, DOUBLE, BOOLEAN, STRING, GEO
+    public void setDescription(String description) {
+        this.description = description;
     }
 }
