@@ -26,13 +26,13 @@ public class ReadHelper {
         return sb.toString();
     }
 
-    public static Map<String, Map<String, Set<String>>> getDatePartedHostMetric(Result<HostMetric> hostMetrics, long time) {
-        Map<String, Map<String, Set<String>>> dateHostMetric = new HashMap<>();
+    public static Map<String, Map<String, Set<String>>> getTimeSlicePartedHostMetric(Result<HostMetric> hostMetrics, long time) {
+        Map<String, Map<String, Set<String>>> timeSliceHostMetric = new HashMap<>();
 
         for (HostMetric hostMetric : hostMetrics) {
-            String date = TimeUtil.getDate(time, hostMetric.getDateInterval());
-            if (dateHostMetric.containsKey(date)) {
-                Map<String, Set<String>> setMap = dateHostMetric.get(date);
+            String timeSlice = TimeUtil.generateTimeSlice(time, hostMetric.getTimePartition());
+            if (timeSliceHostMetric.containsKey(timeSlice)) {
+                Map<String, Set<String>> setMap = timeSliceHostMetric.get(timeSlice);
                 setMap.get("hosts").add(hostMetric.getHost());
                 setMap.get("metrics").add(hostMetric.getMetric());
             } else {
@@ -43,11 +43,11 @@ public class ReadHelper {
                 metricSet.add(hostMetric.getMetric());
                 setMap.put("hosts", hostSet);
                 setMap.put("metrics", metricSet);
-                dateHostMetric.put(date, setMap);
+                timeSliceHostMetric.put(timeSlice, setMap);
             }
         }
 
-        return dateHostMetric;
+        return timeSliceHostMetric;
     }
 
     public static Result<HostMetric> getHostMetrics(Session session, Mapper<HostMetric> mapper, List<String> hosts, List<String> metrics) {

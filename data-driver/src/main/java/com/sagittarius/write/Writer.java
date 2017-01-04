@@ -193,6 +193,7 @@ public interface Writer {
      */
     void bulkInsert(BulkDoubleData bulkDoubleData, int threads);
 
+    void bulkInsert(BulkDoubleData bulkDoubleData);
     /**
      * bulk data insert for those metrics' value type is BOOLEAN.
      * this bulk method implemented by asynchronous multi-threaded,

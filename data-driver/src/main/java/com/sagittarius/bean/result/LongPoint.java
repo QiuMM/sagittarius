@@ -1,13 +1,10 @@
 package com.sagittarius.bean.result;
 
-/**
- * Created by qmm on 2016/12/17.
- */
 public class LongPoint extends AbstractPoint {
     private long value;
 
-    public LongPoint(String metric, long time, long value) {
-        super(metric, time);
+    public LongPoint(String metric, long primaryTime, long secondaryTime, long value) {
+        super(metric, primaryTime, secondaryTime);
         this.value = value;
     }
 

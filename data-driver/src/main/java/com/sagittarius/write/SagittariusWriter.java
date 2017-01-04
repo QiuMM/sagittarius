@@ -1,9 +1,6 @@
 package com.sagittarius.write;
 
-import com.datastax.driver.core.BatchStatement;
-import com.datastax.driver.core.ResultSetFuture;
-import com.datastax.driver.core.Session;
-import com.datastax.driver.core.Statement;
+import com.datastax.driver.core.*;
 import com.datastax.driver.mapping.Mapper;
 import com.datastax.driver.mapping.MappingManager;
 import com.sagittarius.bean.bulk.*;
@@ -261,6 +258,35 @@ public class SagittariusWriter implements Writer {
         }
 
         insertAsync(statements, threads);
+    }
+
+    @Override
+    public void bulkInsert(BulkDoubleData bulkDoubleData) {
+        Mapper<DoubleData> dataMapper = mappingManager.mapper(DoubleData.class);
+        Mapper<Latest> latestMapper = mappingManager.mapper(Latest.class);
+        BatchStatement batchStatement = new BatchStatement(BatchStatement.Type.UNLOGGED);
+        Map<HostMetricPair, DoubleData> latestData = new HashMap<>();
+
+        for (DoubleData data : bulkDoubleData.getDatas()) {
+            Statement statement = dataMapper.saveQuery(data, timestamp(data.getPrimaryTime() * 1000), saveNullFields(false));
+            batchStatement.add(statement);
+
+            HostMetricPair pair = new HostMetricPair(data.getHost(), data.getMetric());
+            if (latestData.containsKey(pair)) {
+                if (latestData.get(pair).getPrimaryTime() < data.getPrimaryTime())
+                    latestData.put(pair, data);
+            } else {
+                latestData.put(pair, data);
+            }
+        }
+        for (Map.Entry<HostMetricPair, DoubleData> entry : latestData.entrySet()) {
+            DoubleData data = entry.getValue();
+            Latest latest = new Latest(data.getHost(), data.getMetric(), data.getTimeSlice());
+            Statement statement = latestMapper.saveQuery(latest, saveNullFields(false));
+            batchStatement.add(statement);
+        }
+
+        session.execute(batchStatement);
     }
 
     @Override

@@ -1,14 +1,11 @@
 package com.sagittarius.bean.result;
 
-/**
- * Created by qmm on 2016/12/17.
- */
 public class GeoPoint extends AbstractPoint {
     private float latitude;
     private float longitude;
 
-    public GeoPoint(String metric, long time, float latitude, float longitude) {
-        super(metric, time);
+    public GeoPoint(String metric, long primaryTime, long secondaryTime, float latitude, float longitude) {
+        super(metric, primaryTime, secondaryTime);
         this.latitude = latitude;
         this.longitude = longitude;
     }

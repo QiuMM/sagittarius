@@ -1,13 +1,10 @@
 package com.sagittarius.bean.result;
 
-/**
- * Created by qmm on 2016/12/17.
- */
 public class FloatPoint extends AbstractPoint {
     private float value;
 
-    public FloatPoint(String metric, long time, float value) {
-        super(metric, time);
+    public FloatPoint(String metric, long primaryTime, long secondaryTime, float value) {
+        super(metric, primaryTime, secondaryTime);
         this.value = value;
     }
 
@@ -18,4 +15,6 @@ public class FloatPoint extends AbstractPoint {
     public void setValue(float value) {
         this.value = value;
     }
+
+
 }

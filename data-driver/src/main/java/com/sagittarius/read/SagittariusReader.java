@@ -1,9 +1,11 @@
-package com.sagittarius.read;
+/*package com.sagittarius.read;
 
 import com.datastax.driver.core.*;
 import com.datastax.driver.mapping.Mapper;
 import com.datastax.driver.mapping.MappingManager;
 import com.datastax.driver.mapping.Result;
+import com.sagittarius.bean.common.TimePartition;
+import com.sagittarius.bean.common.ValueType;
 import com.sagittarius.bean.query.*;
 import com.sagittarius.bean.result.*;
 import com.sagittarius.bean.table.*;
@@ -11,10 +13,7 @@ import com.sagittarius.util.TimeUtil;
 
 import java.util.*;
 
-/**
- * Created by qmm on 2016/12/15.
- */
-public class SagittariusReader implements com.sagittarius.read.interfaces.Reader {
+public class SagittariusReader implements Reader {
     private MappingManager mappingManager;
     private Session session;
 
@@ -23,7 +22,7 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
         this.mappingManager = mappingManager;
     }
 
-    private String getTableByType(HostMetric.ValueType valueType) {
+    private String getTableByType(ValueType valueType) {
         String table = null;
         switch (valueType) {
             case INT:
@@ -51,14 +50,14 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
         return table;
     }
 
-    private ResultSet getPointResultSet(List<String> hosts, List<String> metrics, long time, HostMetric.ValueType valueType) {
+    private ResultSet getPointResultSet(List<String> hosts, List<String> metrics, long Time, ValueType valueType) {
         String table = getTableByType(valueType);
         Mapper<HostMetric> mapper = mappingManager.mapper(HostMetric.class);
         Result<HostMetric> hostMetrics = ReadHelper.getHostMetrics(session, mapper, hosts, metrics);
-        Map<String, Map<String, Set<String>>> dateHostMetric = ReadHelper.getDatePartedHostMetric(hostMetrics, time);
+        Map<String, Map<String, Set<String>>> TimeSliceHostMetric = ReadHelper.getTimeSlicePartedHostMetric(hostMetrics, Time);
         BatchStatement batchStatement = new BatchStatement();
-        for (Map.Entry<String, Map<String, Set<String>>> entry : dateHostMetric.entrySet()) {
-            SimpleStatement statement = new SimpleStatement(String.format(QueryStatement.POINT_QUERY_STATEMENT, table, ReadHelper.generateInStatement(entry.getValue().get("hosts")), ReadHelper.generateInStatement(entry.getValue().get("metrics")), entry.getKey(), time));
+        for (Map.Entry<String, Map<String, Set<String>>> entry : TimeSliceHostMetric.entrySet()) {
+            SimpleStatement statement = new SimpleStatement(String.format(QueryStatement.POINT_QUERY_STATEMENT, table, ReadHelper.generateInStatement(entry.getValue().get("hosts")), ReadHelper.generateInStatement(entry.getValue().get("metrics")), entry.getKey(), Time));
             return session.execute(statement);
             //batchStatement.add(statement);
         }
@@ -67,8 +66,8 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
     }
 
     @Override
-    public Map<String, List<IntPoint>> getIntPoint(List<String> hosts, List<String> metrics, long time) {
-        ResultSet rs = getPointResultSet(hosts, metrics, time, HostMetric.ValueType.INT);
+    public Map<String, List<IntPoint>> getIntPoint(List<String> hosts, List<String> metrics, long Time) {
+        ResultSet rs = getPointResultSet(hosts, metrics, Time, ValueType.INT);
         Mapper<IntData> mapper = mappingManager.mapper(IntData.class);
         Result<IntData> datas = mapper.map(rs);
 
@@ -88,8 +87,8 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
     }
 
     @Override
-    public Map<String, List<LongPoint>> getLongPoint(List<String> hosts, List<String> metrics, long time) {
-        ResultSet rs = getPointResultSet(hosts, metrics, time, HostMetric.ValueType.LONG);
+    public Map<String, List<LongPoint>> getLongPoint(List<String> hosts, List<String> metrics, long Time) {
+        ResultSet rs = getPointResultSet(hosts, metrics, Time, ValueType.LONG);
         Mapper<LongData> mapper = mappingManager.mapper(LongData.class);
         Result<LongData> datas = mapper.map(rs);
 
@@ -109,8 +108,8 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
     }
 
     @Override
-    public Map<String, List<FloatPoint>> getFloatPoint(List<String> hosts, List<String> metrics, long time) {
-        ResultSet rs = getPointResultSet(hosts, metrics, time, HostMetric.ValueType.FLOAT);
+    public Map<String, List<FloatPoint>> getFloatPoint(List<String> hosts, List<String> metrics, long Time) {
+        ResultSet rs = getPointResultSet(hosts, metrics, Time, ValueType.FLOAT);
         Mapper<FloatData> mapper = mappingManager.mapper(FloatData.class);
         Result<FloatData> datas = mapper.map(rs);
 
@@ -130,8 +129,8 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
     }
 
     @Override
-    public Map<String, List<DoublePoint>> getDoublePoint(List<String> hosts, List<String> metrics, long time) {
-        ResultSet rs = getPointResultSet(hosts, metrics, time, HostMetric.ValueType.DOUBLE);
+    public Map<String, List<DoublePoint>> getDoublePoint(List<String> hosts, List<String> metrics, long Time) {
+        ResultSet rs = getPointResultSet(hosts, metrics, Time, ValueType.DOUBLE);
         Mapper<DoubleData> mapper = mappingManager.mapper(DoubleData.class);
         Result<DoubleData> datas = mapper.map(rs);
 
@@ -151,8 +150,8 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
     }
 
     @Override
-    public Map<String, List<BooleanPoint>> getBooleanPoint(List<String> hosts, List<String> metrics, long time) {
-        ResultSet rs = getPointResultSet(hosts, metrics, time, HostMetric.ValueType.BOOLEAN);
+    public Map<String, List<BooleanPoint>> getBooleanPoint(List<String> hosts, List<String> metrics, long Time) {
+        ResultSet rs = getPointResultSet(hosts, metrics, Time, ValueType.BOOLEAN);
         Mapper<BooleanData> mapper = mappingManager.mapper(BooleanData.class);
         Result<BooleanData> datas = mapper.map(rs);
 
@@ -172,8 +171,8 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
     }
 
     @Override
-    public Map<String, List<StringPoint>> getStringPoint(List<String> hosts, List<String> metrics, long time) {
-        ResultSet rs = getPointResultSet(hosts, metrics, time, HostMetric.ValueType.STRING);
+    public Map<String, List<StringPoint>> getStringPoint(List<String> hosts, List<String> metrics, long Time) {
+        ResultSet rs = getPointResultSet(hosts, metrics, Time, ValueType.STRING);
         Mapper<StringData> mapper = mappingManager.mapper(StringData.class);
         Result<StringData> datas = mapper.map(rs);
 
@@ -193,8 +192,8 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
     }
 
     @Override
-    public Map<String, List<GeoPoint>> getGeoPoint(List<String> hosts, List<String> metrics, long time) {
-        ResultSet rs = getPointResultSet(hosts, metrics, time, HostMetric.ValueType.GEO);
+    public Map<String, List<GeoPoint>> getGeoPoint(List<String> hosts, List<String> metrics, long Time) {
+        ResultSet rs = getPointResultSet(hosts, metrics, Time, ValueType.GEO);
         Mapper<GeoData> mapper = mappingManager.mapper(GeoData.class);
         Result<GeoData> datas = mapper.map(rs);
 
@@ -213,7 +212,7 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
         return result;
     }
 
-    private ResultSet getLatestResultSet(List<String> hosts, List<String> metrics, HostMetric.ValueType valueType) {
+    private ResultSet getLatestResultSet(List<String> hosts, List<String> metrics, ValueType valueType) {
         String table = null;
         switch (valueType) {
             case INT:
@@ -245,7 +244,7 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
 
     @Override
     public Map<String, List<IntPoint>> getIntLatest(List<String> hosts, List<String> metrics) {
-        ResultSet rs = getLatestResultSet(hosts, metrics, HostMetric.ValueType.INT);
+        ResultSet rs = getLatestResultSet(hosts, metrics, ValueType.INT);
         Mapper<IntLatest> mapper = mappingManager.mapper(IntLatest.class);
         Result<IntLatest> latests = mapper.map(rs);
 
@@ -266,7 +265,7 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
 
     @Override
     public Map<String, List<LongPoint>> getLongLatest(List<String> hosts, List<String> metrics) {
-        ResultSet rs = getLatestResultSet(hosts, metrics, HostMetric.ValueType.LONG);
+        ResultSet rs = getLatestResultSet(hosts, metrics, ValueType.LONG);
         Mapper<LongLatest> mapper = mappingManager.mapper(LongLatest.class);
         Result<LongLatest> latests = mapper.map(rs);
 
@@ -287,7 +286,7 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
 
     @Override
     public Map<String, List<FloatPoint>> getFloatLatest(List<String> hosts, List<String> metrics) {
-        ResultSet rs = getLatestResultSet(hosts, metrics, HostMetric.ValueType.FLOAT);
+        ResultSet rs = getLatestResultSet(hosts, metrics, ValueType.FLOAT);
         Mapper<FloatLatest> mapper = mappingManager.mapper(FloatLatest.class);
         Result<FloatLatest> latests = mapper.map(rs);
 
@@ -308,7 +307,7 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
 
     @Override
     public Map<String, List<DoublePoint>> getDoubleLatest(List<String> hosts, List<String> metrics) {
-        ResultSet rs = getLatestResultSet(hosts, metrics, HostMetric.ValueType.DOUBLE);
+        ResultSet rs = getLatestResultSet(hosts, metrics, ValueType.DOUBLE);
         Mapper<DoubleLatest> mapper = mappingManager.mapper(DoubleLatest.class);
         Result<DoubleLatest> latests = mapper.map(rs);
 
@@ -329,7 +328,7 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
 
     @Override
     public Map<String, List<BooleanPoint>> getBooleanLatest(List<String> hosts, List<String> metrics) {
-        ResultSet rs = getLatestResultSet(hosts, metrics, HostMetric.ValueType.BOOLEAN);
+        ResultSet rs = getLatestResultSet(hosts, metrics, ValueType.BOOLEAN);
         Mapper<BooleanLatest> mapper = mappingManager.mapper(BooleanLatest.class);
         Result<BooleanLatest> latests = mapper.map(rs);
 
@@ -350,7 +349,7 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
 
     @Override
     public Map<String, List<StringPoint>> getStringLatest(List<String> hosts, List<String> metrics) {
-        ResultSet rs = getLatestResultSet(hosts, metrics, HostMetric.ValueType.STRING);
+        ResultSet rs = getLatestResultSet(hosts, metrics, ValueType.STRING);
         Mapper<StringLatest> mapper = mappingManager.mapper(StringLatest.class);
         Result<StringLatest> latests = mapper.map(rs);
 
@@ -371,7 +370,7 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
 
     @Override
     public Map<String, List<GeoPoint>> getGeoLatest(List<String> hosts, List<String> metrics) {
-        ResultSet rs = getLatestResultSet(hosts, metrics, HostMetric.ValueType.GEO);
+        ResultSet rs = getLatestResultSet(hosts, metrics, ValueType.GEO);
         Mapper<GeoLatest> mapper = mappingManager.mapper(GeoLatest.class);
         Result<GeoLatest> latests = mapper.map(rs);
 
@@ -390,27 +389,27 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
         return result;
     }
 
-    private List<String> getRangeQueryString(List<String> hosts, List<String> metrics, long startTime, long endTime, HostMetric.ValueType valueType) {
+    private List<String> getRangeQueryString(List<String> hosts, List<String> metrics, long startTime, long endTime, ValueType valueType) {
         String table = getTableByType(valueType);
         Mapper<HostMetric> mapper = mappingManager.mapper(HostMetric.class);
         Result<HostMetric> hostMetrics = ReadHelper.getHostMetrics(session, mapper, hosts, metrics);
-        Map<String, Map<String, Set<String>>> dateHostMetric = ReadHelper.getDatePartedHostMetric(hostMetrics, startTime);
+        Map<String, Map<String, Set<String>>> TimeSliceHostMetric = ReadHelper.getTimeSlicePartedHostMetric(hostMetrics, startTime);
         List<String> querys = new ArrayList<>();
 
-        for (Map.Entry<String, Map<String, Set<String>>> entry : dateHostMetric.entrySet()) {
-            String startDate = entry.getKey();
-            if (startDate.contains("D")) {
-                String endDate = TimeUtil.getDate(endTime, HostMetric.DateInterval.DAY);
-                String dateHead = startDate.substring(0, startDate.indexOf("D") + 1);
-                int startDay = Integer.parseInt(startDate.substring(startDate.indexOf("D") + 1));
-                int endDay = Integer.parseInt(endDate.substring(startDate.indexOf("D") + 1));
+        for (Map.Entry<String, Map<String, Set<String>>> entry : TimeSliceHostMetric.entrySet()) {
+            String startTimeSlice = entry.getKey();
+            if (startTimeSlice.contains("D")) {
+                String endTimeSlice = TimeUtil.generateTimeSlice(endTime, TimePartition.DAY);
+                String TimeSliceHead = startTimeSlice.substring(0, startTimeSlice.indexOf("D") + 1);
+                int startDay = Integer.parseInt(startTimeSlice.substring(startTimeSlice.indexOf("D") + 1));
+                int endDay = Integer.parseInt(endTimeSlice.substring(startTimeSlice.indexOf("D") + 1));
                 if (endDay > startDay) {
                     for (int i = startDay + 1; i < endDay; ++i) {
-                        String query = String.format(QueryStatement.WHOLE_PARTITION_QUERY_STATEMENT, table, ReadHelper.generateInStatement(entry.getValue().get("hosts")), ReadHelper.generateInStatement(entry.getValue().get("metrics")), dateHead + i);
+                        String query = String.format(QueryStatement.WHOLE_PARTITION_QUERY_STATEMENT, table, ReadHelper.generateInStatement(entry.getValue().get("hosts")), ReadHelper.generateInStatement(entry.getValue().get("metrics")), TimeSliceHead + i);
                         querys.add(query);
                     }
-                    String startQuery = String.format(QueryStatement.PARTIAL_PARTITION_QUERY_STATEMENT, table, ReadHelper.generateInStatement(entry.getValue().get("hosts")), ReadHelper.generateInStatement(entry.getValue().get("metrics")), startDate, ">", startTime);
-                    String endQuery = String.format(QueryStatement.PARTIAL_PARTITION_QUERY_STATEMENT, table, ReadHelper.generateInStatement(entry.getValue().get("hosts")), ReadHelper.generateInStatement(entry.getValue().get("metrics")), endDate, "<", endTime);
+                    String startQuery = String.format(QueryStatement.PARTIAL_PARTITION_QUERY_STATEMENT, table, ReadHelper.generateInStatement(entry.getValue().get("hosts")), ReadHelper.generateInStatement(entry.getValue().get("metrics")), startTimeSlice, ">", startTime);
+                    String endQuery = String.format(QueryStatement.PARTIAL_PARTITION_QUERY_STATEMENT, table, ReadHelper.generateInStatement(entry.getValue().get("hosts")), ReadHelper.generateInStatement(entry.getValue().get("metrics")), endTimeSlice, "<", endTime);
                     querys.add(startQuery);
                     querys.add(endQuery);
                 }
@@ -422,7 +421,7 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
 
     @Override
     public Map<String, List<IntPoint>> getIntRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter, AggregationType aggregationType) {
-        List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, HostMetric.ValueType.INT);
+        List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.INT);
         BatchStatement batchStatement = new BatchStatement();
         for (String query : querys) {
             batchStatement.add(new SimpleStatement(query));
@@ -448,7 +447,7 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
 
     @Override
     public Map<String, List<LongPoint>> getLongRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter, AggregationType aggregationType) {
-        List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, HostMetric.ValueType.LONG);
+        List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.LONG);
         BatchStatement batchStatement = new BatchStatement();
         for (String query : querys) {
             batchStatement.add(new SimpleStatement(query));
@@ -474,7 +473,7 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
 
     @Override
     public Map<String, List<FloatPoint>> getFloatRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter, AggregationType aggregationType) {
-        List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, HostMetric.ValueType.FLOAT);
+        List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.FLOAT);
         BatchStatement batchStatement = new BatchStatement();
         for (String query : querys) {
             batchStatement.add(new SimpleStatement(query));
@@ -500,7 +499,7 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
 
     @Override
     public Map<String, List<DoublePoint>> getDoubleRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter, AggregationType aggregationType) {
-        List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, HostMetric.ValueType.DOUBLE);
+        List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.DOUBLE);
         BatchStatement batchStatement = new BatchStatement();
         for (String query : querys) {
             batchStatement.add(new SimpleStatement(query));
@@ -526,7 +525,7 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
 
     @Override
     public Map<String, List<BooleanPoint>> getBooleanRange(List<String> hosts, List<String> metrics, long startTime, long endTime, BooleanFilter filter) {
-        List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, HostMetric.ValueType.BOOLEAN);
+        List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.BOOLEAN);
         BatchStatement batchStatement = new BatchStatement();
         for (String query : querys) {
             batchStatement.add(new SimpleStatement(query));
@@ -552,7 +551,7 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
 
     @Override
     public Map<String, List<StringPoint>> getStringRange(List<String> hosts, List<String> metrics, long startTime, long endTime, StringFilter filter) {
-        List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, HostMetric.ValueType.STRING);
+        List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.STRING);
         BatchStatement batchStatement = new BatchStatement();
         for (String query : querys) {
             batchStatement.add(new SimpleStatement(query));
@@ -578,7 +577,7 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
 
     @Override
     public Map<String, List<GeoPoint>> getGeoRange(List<String> hosts, List<String> metrics, long startTime, long endTime, GeoFilter filter) {
-        List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, HostMetric.ValueType.GEO);
+        List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.GEO);
         BatchStatement batchStatement = new BatchStatement();
         for (String query : querys) {
             batchStatement.add(new SimpleStatement(query));
@@ -602,3 +601,4 @@ public class SagittariusReader implements com.sagittarius.read.interfaces.Reader
         return result;
     }
 }
+*/

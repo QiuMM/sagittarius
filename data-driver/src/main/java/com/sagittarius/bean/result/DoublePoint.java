@@ -1,13 +1,10 @@
 package com.sagittarius.bean.result;
 
-/**
- * Created by qmm on 2016/12/17.
- */
 public class DoublePoint extends AbstractPoint {
     private double value;
 
-    public DoublePoint(String metric, long time, double value) {
-        super(metric, time);
+    public DoublePoint(String metric, long primaryTime, long secondaryTime, double value) {
+        super(metric, primaryTime, secondaryTime);
         this.value = value;
     }
 

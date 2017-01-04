@@ -8,8 +8,8 @@ import com.datastax.driver.mapping.annotations.Table;
  */
 
 @Table(name = "data_double",
-        readConsistency = "QUORUM",
-        writeConsistency = "QUORUM")
+        readConsistency = "LOCAL_ONE",
+        writeConsistency = "LOCAL_ONE")
 public class DoubleData extends AbstractData {
     private double value;
 

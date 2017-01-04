@@ -8,7 +8,6 @@ import com.datastax.driver.mapping.MappingManager;
 import com.sagittarius.bean.common.TimePartition;
 import com.sagittarius.bean.common.ValueType;
 import com.sagittarius.read.Reader;
-import com.sagittarius.read.SagittariusReader;
 import com.sagittarius.write.SagittariusWriter;
 import com.sagittarius.write.Writer;
 
@@ -36,9 +35,9 @@ public class SagittariusClient {
         return new SagittariusWriter(session, mappingManager);
     }
 
-    public Reader getReader() {
-        return new SagittariusReader(session, mappingManager);
-    }
+    //public Reader getReader() {
+        //return new SagittariusReader(session, mappingManager);
+    //}
 
     public void close() {
         if (session != null) {

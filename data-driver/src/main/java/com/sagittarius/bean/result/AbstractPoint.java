@@ -1,15 +1,17 @@
 package com.sagittarius.bean.result;
 
 /**
- * Created by qmm on 2016/12/17.
+ * metric data point info, used to return data point result to users
  */
-public class AbstractPoint {
+public abstract class AbstractPoint {
     private String metric;
-    private long time;
+    private long primaryTime;
+    private long secondaryTime;
 
-    public AbstractPoint(String metric, long time) {
+    public AbstractPoint(String metric, long primaryTime, long secondaryTime) {
         this.metric = metric;
-        this.time = time;
+        this.primaryTime = primaryTime;
+        this.secondaryTime = secondaryTime;
     }
 
     public String getMetric() {
@@ -20,11 +22,19 @@ public class AbstractPoint {
         this.metric = metric;
     }
 
-    public long getTime() {
-        return time;
+    public long getPrimaryTime() {
+        return primaryTime;
     }
 
-    public void setTime(long time) {
-        this.time = time;
+    public void setPrimaryTime(long primaryTime) {
+        this.primaryTime = primaryTime;
+    }
+
+    public long getSecondaryTime() {
+        return secondaryTime;
+    }
+
+    public void setSecondaryTime(long secondaryTime) {
+        this.secondaryTime = secondaryTime;
     }
 }

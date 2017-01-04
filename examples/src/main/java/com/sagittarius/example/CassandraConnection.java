@@ -8,13 +8,11 @@ import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Created by qmm on 2016/12/20.
- */
 public class CassandraConnection {
 
     private static final Logger logger = LoggerFactory.getLogger(CassandraConnection.class);
-    private static String[] cassandraNodes = new String[]{"192.168.3.51", "192.168.3.52", "192.168.3.53"};
+    private static String[] cassandraNodes = new String[]{"192.168.3.17","192.168.3.19","192.168.3.21","192.168.3.23","192.168.3.25"};
+    //private static String[] cassandraNodes = new String[]{"192.168.130.11"};
     private static int cassandraPort = 9042;
     private static CassandraConnection cassandraConnection = null;
     private Cluster cluster;
@@ -38,10 +36,10 @@ public class CassandraConnection {
 
         PoolingOptions poolingOptions = new PoolingOptions();
         poolingOptions
-                .setConnectionsPerHost(HostDistance.LOCAL, 2, 3)
-                .setConnectionsPerHost(HostDistance.REMOTE, 2, 2)
-                .setMaxRequestsPerConnection(HostDistance.LOCAL, 1024)
-                .setMaxRequestsPerConnection(HostDistance.REMOTE, 256)
+                .setConnectionsPerHost(HostDistance.LOCAL, 3, 10)
+                .setConnectionsPerHost(HostDistance.REMOTE, 3, 10)
+                .setMaxRequestsPerConnection(HostDistance.LOCAL, 4096)
+                .setMaxRequestsPerConnection(HostDistance.REMOTE, 4096)
                 .setHeartbeatIntervalSeconds(0);
 
         SocketOptions socketOptions = new SocketOptions();
@@ -58,7 +56,7 @@ public class CassandraConnection {
 
         cluster = Cluster.builder().addContactPointsWithPorts(addresses)
                 .withPoolingOptions(poolingOptions)
-                .withSocketOptions(socketOptions)
+               // .withSocketOptions(socketOptions)
                 .build();
 
         try {

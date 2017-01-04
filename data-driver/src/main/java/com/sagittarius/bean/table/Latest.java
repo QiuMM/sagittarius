@@ -9,8 +9,8 @@ import com.datastax.driver.mapping.annotations.Table;
  * class map to cassandra table latest
  */
 @Table(name = "latest",
-        readConsistency = "QUORUM",
-        writeConsistency = "QUORUM")
+        readConsistency = "LOCAL_ONE",
+        writeConsistency = "LOCAL_ONE")
 public class Latest {
     private String host;
     private String metric;
