@@ -1,4 +1,4 @@
-/*package com.sagittarius.read;
+package com.sagittarius.read;
 
 import com.datastax.driver.core.*;
 import com.datastax.driver.mapping.Mapper;
@@ -50,35 +50,37 @@ public class SagittariusReader implements Reader {
         return table;
     }
 
-    private ResultSet getPointResultSet(List<String> hosts, List<String> metrics, long Time, ValueType valueType) {
+    private List<ResultSet> getPointResultSet(List<String> hosts, List<String> metrics, long Time, ValueType valueType) {
         String table = getTableByType(valueType);
+        List<ResultSet> resultSets = new ArrayList<>();
         Mapper<HostMetric> mapper = mappingManager.mapper(HostMetric.class);
         Result<HostMetric> hostMetrics = ReadHelper.getHostMetrics(session, mapper, hosts, metrics);
         Map<String, Map<String, Set<String>>> TimeSliceHostMetric = ReadHelper.getTimeSlicePartedHostMetric(hostMetrics, Time);
-        BatchStatement batchStatement = new BatchStatement();
         for (Map.Entry<String, Map<String, Set<String>>> entry : TimeSliceHostMetric.entrySet()) {
             SimpleStatement statement = new SimpleStatement(String.format(QueryStatement.POINT_QUERY_STATEMENT, table, ReadHelper.generateInStatement(entry.getValue().get("hosts")), ReadHelper.generateInStatement(entry.getValue().get("metrics")), entry.getKey(), Time));
-            return session.execute(statement);
-            //batchStatement.add(statement);
+            ResultSet set = session.execute(statement);
+            resultSets.add(set);
         }
-
-        return session.execute(batchStatement);
+        return resultSets;
     }
 
     @Override
-    public Map<String, List<IntPoint>> getIntPoint(List<String> hosts, List<String> metrics, long Time) {
-        ResultSet rs = getPointResultSet(hosts, metrics, Time, ValueType.INT);
+    public Map<String, List<IntPoint>> getIntPoint(List<String> hosts, List<String> metrics, long Time, Shift shift) {
+        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, Time, ValueType.INT);
+        List<IntData> datas = new ArrayList<>();
         Mapper<IntData> mapper = mappingManager.mapper(IntData.class);
-        Result<IntData> datas = mapper.map(rs);
+        for (ResultSet rs : resultSets) {
+            datas.addAll(mapper.map(rs).all());
+        }
 
         Map<String, List<IntPoint>> result = new HashMap<>();
         for (IntData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                result.get(host).add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
             } else {
                 List<IntPoint> points = new ArrayList<>();
-                points.add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                points.add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -87,19 +89,22 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, List<LongPoint>> getLongPoint(List<String> hosts, List<String> metrics, long Time) {
-        ResultSet rs = getPointResultSet(hosts, metrics, Time, ValueType.LONG);
+    public Map<String, List<LongPoint>> getLongPoint(List<String> hosts, List<String> metrics, long Time, Shift shift) {
+        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, Time, ValueType.LONG);
+        List<LongData> datas = new ArrayList<>();
         Mapper<LongData> mapper = mappingManager.mapper(LongData.class);
-        Result<LongData> datas = mapper.map(rs);
+        for (ResultSet rs : resultSets) {
+            datas.addAll(mapper.map(rs).all());
+        }
 
         Map<String, List<LongPoint>> result = new HashMap<>();
         for (LongData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                result.get(host).add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
             } else {
                 List<LongPoint> points = new ArrayList<>();
-                points.add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                points.add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -108,19 +113,22 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, List<FloatPoint>> getFloatPoint(List<String> hosts, List<String> metrics, long Time) {
-        ResultSet rs = getPointResultSet(hosts, metrics, Time, ValueType.FLOAT);
+    public Map<String, List<FloatPoint>> getFloatPoint(List<String> hosts, List<String> metrics, long Time, Shift shift) {
+        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, Time, ValueType.FLOAT);
+        List<FloatData> datas = new ArrayList<>();
         Mapper<FloatData> mapper = mappingManager.mapper(FloatData.class);
-        Result<FloatData> datas = mapper.map(rs);
+        for (ResultSet rs : resultSets) {
+            datas.addAll(mapper.map(rs).all());
+        }
 
         Map<String, List<FloatPoint>> result = new HashMap<>();
         for (FloatData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                result.get(host).add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
             } else {
                 List<FloatPoint> points = new ArrayList<>();
-                points.add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                points.add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -129,19 +137,22 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, List<DoublePoint>> getDoublePoint(List<String> hosts, List<String> metrics, long Time) {
-        ResultSet rs = getPointResultSet(hosts, metrics, Time, ValueType.DOUBLE);
+    public Map<String, List<DoublePoint>> getDoublePoint(List<String> hosts, List<String> metrics, long Time, Shift shift) {
+        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, Time, ValueType.DOUBLE);
+        List<DoubleData> datas = new ArrayList<>();
         Mapper<DoubleData> mapper = mappingManager.mapper(DoubleData.class);
-        Result<DoubleData> datas = mapper.map(rs);
+        for (ResultSet rs : resultSets) {
+            datas.addAll(mapper.map(rs).all());
+        }
 
         Map<String, List<DoublePoint>> result = new HashMap<>();
         for (DoubleData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                result.get(host).add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
             } else {
                 List<DoublePoint> points = new ArrayList<>();
-                points.add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                points.add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -150,19 +161,22 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, List<BooleanPoint>> getBooleanPoint(List<String> hosts, List<String> metrics, long Time) {
-        ResultSet rs = getPointResultSet(hosts, metrics, Time, ValueType.BOOLEAN);
+    public Map<String, List<BooleanPoint>> getBooleanPoint(List<String> hosts, List<String> metrics, long Time, Shift shift) {
+        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, Time, ValueType.BOOLEAN);
+        List<BooleanData> datas = new ArrayList<>();
         Mapper<BooleanData> mapper = mappingManager.mapper(BooleanData.class);
-        Result<BooleanData> datas = mapper.map(rs);
+        for (ResultSet rs : resultSets) {
+            datas.addAll(mapper.map(rs).all());
+        }
 
         Map<String, List<BooleanPoint>> result = new HashMap<>();
         for (BooleanData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                result.get(host).add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
             } else {
                 List<BooleanPoint> points = new ArrayList<>();
-                points.add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                points.add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -171,19 +185,22 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, List<StringPoint>> getStringPoint(List<String> hosts, List<String> metrics, long Time) {
-        ResultSet rs = getPointResultSet(hosts, metrics, Time, ValueType.STRING);
+    public Map<String, List<StringPoint>> getStringPoint(List<String> hosts, List<String> metrics, long Time, Shift shift) {
+        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, Time, ValueType.STRING);
+        List<StringData> datas = new ArrayList<>();
         Mapper<StringData> mapper = mappingManager.mapper(StringData.class);
-        Result<StringData> datas = mapper.map(rs);
+        for (ResultSet rs : resultSets) {
+            datas.addAll(mapper.map(rs).all());
+        }
 
         Map<String, List<StringPoint>> result = new HashMap<>();
         for (StringData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                result.get(host).add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
             } else {
                 List<StringPoint> points = new ArrayList<>();
-                points.add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                points.add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -192,19 +209,22 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, List<GeoPoint>> getGeoPoint(List<String> hosts, List<String> metrics, long Time) {
-        ResultSet rs = getPointResultSet(hosts, metrics, Time, ValueType.GEO);
+    public Map<String, List<GeoPoint>> getGeoPoint(List<String> hosts, List<String> metrics, long Time, Shift shift) {
+        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, Time, ValueType.GEO);
+        List<GeoData> datas = new ArrayList<>();
         Mapper<GeoData> mapper = mappingManager.mapper(GeoData.class);
-        Result<GeoData> datas = mapper.map(rs);
+        for (ResultSet rs : resultSets) {
+            datas.addAll(mapper.map(rs).all());
+        }
 
         Map<String, List<GeoPoint>> result = new HashMap<>();
         for (GeoData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getLatitude(), data.getLongitude()));
+                result.get(host).add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getLatitude(), data.getLongitude()));
             } else {
                 List<GeoPoint> points = new ArrayList<>();
-                points.add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getLatitude(), data.getLongitude()));
+                points.add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getLatitude(), data.getLongitude()));
                 result.put(host, points);
             }
         }
@@ -244,7 +264,7 @@ public class SagittariusReader implements Reader {
 
     @Override
     public Map<String, List<IntPoint>> getIntLatest(List<String> hosts, List<String> metrics) {
-        ResultSet rs = getLatestResultSet(hosts, metrics, ValueType.INT);
+        /*ResultSet rs = getLatestResultSet(hosts, metrics, ValueType.INT);
         Mapper<IntLatest> mapper = mappingManager.mapper(IntLatest.class);
         Result<IntLatest> latests = mapper.map(rs);
 
@@ -258,135 +278,39 @@ public class SagittariusReader implements Reader {
                 points.add(new IntPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
                 result.put(host, points);
             }
-        }
+        }*/
 
-        return result;
+        return null;
     }
 
     @Override
     public Map<String, List<LongPoint>> getLongLatest(List<String> hosts, List<String> metrics) {
-        ResultSet rs = getLatestResultSet(hosts, metrics, ValueType.LONG);
-        Mapper<LongLatest> mapper = mappingManager.mapper(LongLatest.class);
-        Result<LongLatest> latests = mapper.map(rs);
-
-        Map<String, List<LongPoint>> result = new HashMap<>();
-        for (LongLatest latest : latests) {
-            String host = latest.getHost();
-            if (result.containsKey(host)) {
-                result.get(host).add(new LongPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
-            } else {
-                List<LongPoint> points = new ArrayList<>();
-                points.add(new LongPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
-                result.put(host, points);
-            }
-        }
-
-        return result;
+        return null;
     }
 
     @Override
     public Map<String, List<FloatPoint>> getFloatLatest(List<String> hosts, List<String> metrics) {
-        ResultSet rs = getLatestResultSet(hosts, metrics, ValueType.FLOAT);
-        Mapper<FloatLatest> mapper = mappingManager.mapper(FloatLatest.class);
-        Result<FloatLatest> latests = mapper.map(rs);
-
-        Map<String, List<FloatPoint>> result = new HashMap<>();
-        for (FloatLatest latest : latests) {
-            String host = latest.getHost();
-            if (result.containsKey(host)) {
-                result.get(host).add(new FloatPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
-            } else {
-                List<FloatPoint> points = new ArrayList<>();
-                points.add(new FloatPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
-                result.put(host, points);
-            }
-        }
-
-        return result;
+        return null;
     }
 
     @Override
     public Map<String, List<DoublePoint>> getDoubleLatest(List<String> hosts, List<String> metrics) {
-        ResultSet rs = getLatestResultSet(hosts, metrics, ValueType.DOUBLE);
-        Mapper<DoubleLatest> mapper = mappingManager.mapper(DoubleLatest.class);
-        Result<DoubleLatest> latests = mapper.map(rs);
-
-        Map<String, List<DoublePoint>> result = new HashMap<>();
-        for (DoubleLatest latest : latests) {
-            String host = latest.getHost();
-            if (result.containsKey(host)) {
-                result.get(host).add(new DoublePoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
-            } else {
-                List<DoublePoint> points = new ArrayList<>();
-                points.add(new DoublePoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
-                result.put(host, points);
-            }
-        }
-
-        return result;
+        return null;
     }
 
     @Override
     public Map<String, List<BooleanPoint>> getBooleanLatest(List<String> hosts, List<String> metrics) {
-        ResultSet rs = getLatestResultSet(hosts, metrics, ValueType.BOOLEAN);
-        Mapper<BooleanLatest> mapper = mappingManager.mapper(BooleanLatest.class);
-        Result<BooleanLatest> latests = mapper.map(rs);
-
-        Map<String, List<BooleanPoint>> result = new HashMap<>();
-        for (BooleanLatest latest : latests) {
-            String host = latest.getHost();
-            if (result.containsKey(host)) {
-                result.get(host).add(new BooleanPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
-            } else {
-                List<BooleanPoint> points = new ArrayList<>();
-                points.add(new BooleanPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
-                result.put(host, points);
-            }
-        }
-
-        return result;
+        return null;
     }
 
     @Override
     public Map<String, List<StringPoint>> getStringLatest(List<String> hosts, List<String> metrics) {
-        ResultSet rs = getLatestResultSet(hosts, metrics, ValueType.STRING);
-        Mapper<StringLatest> mapper = mappingManager.mapper(StringLatest.class);
-        Result<StringLatest> latests = mapper.map(rs);
-
-        Map<String, List<StringPoint>> result = new HashMap<>();
-        for (StringLatest latest : latests) {
-            String host = latest.getHost();
-            if (result.containsKey(host)) {
-                result.get(host).add(new StringPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
-            } else {
-                List<StringPoint> points = new ArrayList<>();
-                points.add(new StringPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
-                result.put(host, points);
-            }
-        }
-
-        return result;
+        return null;
     }
 
     @Override
     public Map<String, List<GeoPoint>> getGeoLatest(List<String> hosts, List<String> metrics) {
-        ResultSet rs = getLatestResultSet(hosts, metrics, ValueType.GEO);
-        Mapper<GeoLatest> mapper = mappingManager.mapper(GeoLatest.class);
-        Result<GeoLatest> latests = mapper.map(rs);
-
-        Map<String, List<GeoPoint>> result = new HashMap<>();
-        for (GeoLatest latest : latests) {
-            String host = latest.getHost();
-            if (result.containsKey(host)) {
-                result.get(host).add(new GeoPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getLatitude(), latest.getLongitude()));
-            } else {
-                List<GeoPoint> points = new ArrayList<>();
-                points.add(new GeoPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getLatitude(), latest.getLongitude()));
-                result.put(host, points);
-            }
-        }
-
-        return result;
+        return null;
     }
 
     private List<String> getRangeQueryString(List<String> hosts, List<String> metrics, long startTime, long endTime, ValueType valueType) {
@@ -420,24 +344,23 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, List<IntPoint>> getIntRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter, AggregationType aggregationType) {
+    public Map<String, List<IntPoint>> getIntRange(List<String> hosts, List<String> metrics, long startTime, long endTime) {
         List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.INT);
-        BatchStatement batchStatement = new BatchStatement();
-        for (String query : querys) {
-            batchStatement.add(new SimpleStatement(query));
-        }
-        ResultSet rs = session.execute(batchStatement);
         Mapper<IntData> mapper = mappingManager.mapper(IntData.class);
-        Result<IntData> datas = mapper.map(rs);
+        List<IntData> datas = new ArrayList<>();
+        for (String query : querys) {
+            ResultSet rs = session.execute(query);
+            datas.addAll(mapper.map(rs).all());
+        }
 
         Map<String, List<IntPoint>> result = new HashMap<>();
         for (IntData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                result.get(host).add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
             } else {
                 List<IntPoint> points = new ArrayList<>();
-                points.add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                points.add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -446,24 +369,23 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, List<LongPoint>> getLongRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter, AggregationType aggregationType) {
+    public Map<String, List<LongPoint>> getLongRange(List<String> hosts, List<String> metrics, long startTime, long endTime) {
         List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.LONG);
-        BatchStatement batchStatement = new BatchStatement();
-        for (String query : querys) {
-            batchStatement.add(new SimpleStatement(query));
-        }
-        ResultSet rs = session.execute(batchStatement);
         Mapper<LongData> mapper = mappingManager.mapper(LongData.class);
-        Result<LongData> datas = mapper.map(rs);
+        List<LongData> datas = new ArrayList<>();
+        for (String query : querys) {
+            ResultSet rs = session.execute(query);
+            datas.addAll(mapper.map(rs).all());
+        }
 
         Map<String, List<LongPoint>> result = new HashMap<>();
         for (LongData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                result.get(host).add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
             } else {
                 List<LongPoint> points = new ArrayList<>();
-                points.add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                points.add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -472,24 +394,23 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, List<FloatPoint>> getFloatRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter, AggregationType aggregationType) {
+    public Map<String, List<FloatPoint>> getFloatRange(List<String> hosts, List<String> metrics, long startTime, long endTime) {
         List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.FLOAT);
-        BatchStatement batchStatement = new BatchStatement();
-        for (String query : querys) {
-            batchStatement.add(new SimpleStatement(query));
-        }
-        ResultSet rs = session.execute(batchStatement);
         Mapper<FloatData> mapper = mappingManager.mapper(FloatData.class);
-        Result<FloatData> datas = mapper.map(rs);
+        List<FloatData> datas = new ArrayList<>();
+        for (String query : querys) {
+            ResultSet rs = session.execute(query);
+            datas.addAll(mapper.map(rs).all());
+        }
 
         Map<String, List<FloatPoint>> result = new HashMap<>();
         for (FloatData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                result.get(host).add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
             } else {
                 List<FloatPoint> points = new ArrayList<>();
-                points.add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                points.add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -498,24 +419,23 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, List<DoublePoint>> getDoubleRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter, AggregationType aggregationType) {
+    public Map<String, List<DoublePoint>> getDoubleRange(List<String> hosts, List<String> metrics, long startTime, long endTime) {
         List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.DOUBLE);
-        BatchStatement batchStatement = new BatchStatement();
-        for (String query : querys) {
-            batchStatement.add(new SimpleStatement(query));
-        }
-        ResultSet rs = session.execute(batchStatement);
         Mapper<DoubleData> mapper = mappingManager.mapper(DoubleData.class);
-        Result<DoubleData> datas = mapper.map(rs);
+        List<DoubleData> datas = new ArrayList<>();
+        for (String query : querys) {
+            ResultSet rs = session.execute(query);
+            datas.addAll(mapper.map(rs).all());
+        }
 
         Map<String, List<DoublePoint>> result = new HashMap<>();
         for (DoubleData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                result.get(host).add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
             } else {
                 List<DoublePoint> points = new ArrayList<>();
-                points.add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                points.add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -524,24 +444,23 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, List<BooleanPoint>> getBooleanRange(List<String> hosts, List<String> metrics, long startTime, long endTime, BooleanFilter filter) {
+    public Map<String, List<BooleanPoint>> getBooleanRange(List<String> hosts, List<String> metrics, long startTime, long endTime) {
         List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.BOOLEAN);
-        BatchStatement batchStatement = new BatchStatement();
-        for (String query : querys) {
-            batchStatement.add(new SimpleStatement(query));
-        }
-        ResultSet rs = session.execute(batchStatement);
         Mapper<BooleanData> mapper = mappingManager.mapper(BooleanData.class);
-        Result<BooleanData> datas = mapper.map(rs);
+        List<BooleanData> datas = new ArrayList<>();
+        for (String query : querys) {
+            ResultSet rs = session.execute(query);
+            datas.addAll(mapper.map(rs).all());
+        }
 
         Map<String, List<BooleanPoint>> result = new HashMap<>();
         for (BooleanData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                result.get(host).add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
             } else {
                 List<BooleanPoint> points = new ArrayList<>();
-                points.add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                points.add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -550,24 +469,23 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, List<StringPoint>> getStringRange(List<String> hosts, List<String> metrics, long startTime, long endTime, StringFilter filter) {
+    public Map<String, List<StringPoint>> getStringRange(List<String> hosts, List<String> metrics, long startTime, long endTime) {
         List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.STRING);
-        BatchStatement batchStatement = new BatchStatement();
-        for (String query : querys) {
-            batchStatement.add(new SimpleStatement(query));
-        }
-        ResultSet rs = session.execute(batchStatement);
         Mapper<StringData> mapper = mappingManager.mapper(StringData.class);
-        Result<StringData> datas = mapper.map(rs);
+        List<StringData> datas = new ArrayList<>();
+        for (String query : querys) {
+            ResultSet rs = session.execute(query);
+            datas.addAll(mapper.map(rs).all());
+        }
 
         Map<String, List<StringPoint>> result = new HashMap<>();
         for (StringData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                result.get(host).add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
             } else {
                 List<StringPoint> points = new ArrayList<>();
-                points.add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getValue()));
+                points.add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -576,24 +494,23 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, List<GeoPoint>> getGeoRange(List<String> hosts, List<String> metrics, long startTime, long endTime, GeoFilter filter) {
+    public Map<String, List<GeoPoint>> getGeoRange(List<String> hosts, List<String> metrics, long startTime, long endTime) {
         List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.GEO);
-        BatchStatement batchStatement = new BatchStatement();
-        for (String query : querys) {
-            batchStatement.add(new SimpleStatement(query));
-        }
-        ResultSet rs = session.execute(batchStatement);
         Mapper<GeoData> mapper = mappingManager.mapper(GeoData.class);
-        Result<GeoData> datas = mapper.map(rs);
+        List<GeoData> datas = new ArrayList<>();
+        for (String query : querys) {
+            ResultSet rs = session.execute(query);
+            datas.addAll(mapper.map(rs).all());
+        }
 
         Map<String, List<GeoPoint>> result = new HashMap<>();
         for (GeoData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getLatitude(), data.getLongitude()));
+                result.get(host).add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getLatitude(), data.getLongitude()));
             } else {
                 List<GeoPoint> points = new ArrayList<>();
-                points.add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getLatitude(), data.getLongitude()));
+                points.add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getLatitude(), data.getLongitude()));
                 result.put(host, points);
             }
         }
@@ -601,4 +518,3 @@ public class SagittariusReader implements Reader {
         return result;
     }
 }
-*/
