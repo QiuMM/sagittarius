@@ -69,6 +69,8 @@ public abstract class AbstractData {
 
     @Column(name = "secondary_time")
     public Long getSecondaryTime() {
+        if(secondaryTime==null)
+            return new Long(-1);
         return secondaryTime;
     }
 

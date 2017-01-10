@@ -26,7 +26,7 @@ public class ReadHelper {
         return sb.toString();
     }
 
-    public static Map<String, Map<String, Set<String>>> getTimeSlicePartedHostMetric(Result<HostMetric> hostMetrics, long time) {
+    public static Map<String, Map<String, Set<String>>> getTimeSlicePartedHostMetrics(Result<HostMetric> hostMetrics, long time) {
         Map<String, Map<String, Set<String>>> timeSliceHostMetric = new HashMap<>();
 
         for (HostMetric hostMetric : hostMetrics) {
@@ -50,8 +50,9 @@ public class ReadHelper {
         return timeSliceHostMetric;
     }
 
+
     public static Result<HostMetric> getHostMetrics(Session session, Mapper<HostMetric> mapper, List<String> hosts, List<String> metrics) {
-        Statement statement = new SimpleStatement(String.format(QueryStatement.HOST_METRIC_QUERY_STATEMENT, generateInStatement(hosts), generateInStatement(metrics)));
+        Statement statement = new SimpleStatement(String.format(QueryStatement.HOST_METRICS_QUERY_STATEMENT, generateInStatement(hosts), generateInStatement(metrics)));
         ResultSet rs = session.execute(statement);
         return mapper.map(rs);
     }
