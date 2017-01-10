@@ -1,8 +1,6 @@
 package com.sagittarius.example;
 
-import com.datastax.driver.core.*;
-import com.sagittarius.bean.bulk.BulkDoubleData;
-import com.sagittarius.bean.bulk.BulkIntData;
+import com.datastax.driver.core.Cluster;
 import com.sagittarius.bean.common.MetricMetadata;
 import com.sagittarius.bean.common.TimePartition;
 import com.sagittarius.bean.common.ValueType;
@@ -14,10 +12,14 @@ import com.sagittarius.read.Reader;
 import com.sagittarius.write.Writer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import java.time.*;
 import java.time.LocalDate;
 import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 
 public class Example {
     private static final Logger logger = LoggerFactory.getLogger(Example.class);
@@ -40,30 +42,6 @@ public class Example {
         //readbyRange(reader);
         //readFuzzy(reader);
 
-    }
-
-    private static void writeTestAsync(Writer writer, int threads, int runTime) {
-        long start = System.currentTimeMillis();
-        long time = System.currentTimeMillis();
-        Random random = new Random();
-        long consumeTime = 0;
-        long count = 0;
-        double throughput = 0;
-        while ((System.currentTimeMillis() - start) < runTime * 60 * 60 * 1000) {
-            BulkDoubleData datas = new BulkDoubleData();
-            for (int i = 0; i < 50; ++i) {
-                for (int j = 0; j < 100; ++j) {
-                    datas.addData("12828" + i, "APP", time, time, TimePartition.DAY, random.nextDouble() * 100);
-                    ++time;
-                }
-            }
-            long startTime = System.currentTimeMillis();
-            writer.bulkInsert(datas, threads);
-            consumeTime += System.currentTimeMillis() - startTime;
-            count += 5000;
-            throughput = count / ((double) consumeTime / 1000);
-            logger.info("throughput: " + throughput + ", count: " + count);
-        }
     }
 
     private static void batchWriteTest(Writer writer, int threads, int runTime, int batchSize) {
@@ -150,6 +128,7 @@ public class Example {
         hosts.add("128290");
         List<String> metrics = new ArrayList<>();
         metrics.add("APP");
+
         Map<String, List<DoublePoint>> result = reader.getDoubleLatest(hosts, metrics);
         //Map<String, List<DoublePoint>> result = reader.getDoublePoint(hosts, metrics, 1482319512851L);
         for (Map.Entry<String, List<DoublePoint>> entry : result.entrySet()) {

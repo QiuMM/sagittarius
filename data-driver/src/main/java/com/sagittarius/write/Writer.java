@@ -1,6 +1,5 @@
 package com.sagittarius.write;
 
-import com.sagittarius.bean.bulk.*;
 import com.sagittarius.bean.common.MetricMetadata;
 import com.sagittarius.bean.common.TimePartition;
 
@@ -156,68 +155,4 @@ public interface Writer {
      * @param longitude longitude value
      */
     void insert(String host, String metric, long primaryTime, long secondaryTime, TimePartition timePartition, float latitude, float longitude);
-
-    /**
-     * bulk data insert for those metrics' value type is INT.
-     * this bulk method implemented by asynchronous multi-threaded,
-     * so you must specify how many threads to execute asynchronous
-     * write. Be careful of the amount of threads you set for too
-     * many threads may exhaust your resources.
-     */
-    void bulkInsert(BulkIntData bulkIntData, int threads);
-
-    /**
-     * bulk data insert for those metrics' value type is LONG.
-     * this bulk method implemented by asynchronous multi-threaded,
-     * so you must specify how many threads to execute asynchronous
-     * write. Be careful of the amount of threads you set for too
-     * many threads may exhaust your resources.
-     */
-    void bulkInsert(BulkLongData bulkLongData, int threads);
-
-    /**
-     * bulk data insert for those metrics' value type is FLOAT.
-     * this bulk method implemented by asynchronous multi-threaded,
-     * so you must specify how many threads to execute asynchronous
-     * write. Be careful of the amount of threads you set for too
-     * many threads may exhaust your resources.
-     */
-    void bulkInsert(BulkFloatData bulkFloatData, int threads);
-
-    /**
-     * bulk data insert for those metrics' value type is DOUBLE.
-     * this bulk method implemented by asynchronous multi-threaded,
-     * so you must specify how many threads to execute asynchronous
-     * write. Be careful of the amount of threads you set for too
-     * many threads may exhaust your resources.
-     */
-    void bulkInsert(BulkDoubleData bulkDoubleData, int threads);
-
-    void bulkInsert(BulkDoubleData bulkDoubleData);
-    /**
-     * bulk data insert for those metrics' value type is BOOLEAN.
-     * this bulk method implemented by asynchronous multi-threaded,
-     * so you must specify how many threads to execute asynchronous
-     * write. Be careful of the amount of threads you set for too
-     * many threads may exhaust your resources.
-     */
-    void bulkInsert(BulkBooleanData bulkBooleanData, int threads);
-
-    /**
-     * bulk data insert for those metrics' value type is STRING.
-     * tthis bulk method implemented by asynchronous multi-threaded,
-     * so you must specify how many threads to execute asynchronous
-     * write. Be careful of the amount of threads you set for too
-     * many threads may exhaust your resources.
-     */
-    void bulkInsert(BulkStringData bulkStringData, int threads);
-
-    /**
-     * bulk data insert for those metrics' value type is GEO.
-     * this bulk method implemented by asynchronous multi-threaded,
-     * so you must specify how many threads to execute asynchronous
-     * write. Be careful of the amount of threads you set for too
-     * many threads may exhaust your resources.
-     */
-    void bulkInsert(BulkGeoData bulkGeoData, int threads);
 }
