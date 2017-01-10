@@ -9,7 +9,7 @@ docs
 notes
 .DS_Store
 
-.log
+*.log
 /.idea
 .idea
 *.iml

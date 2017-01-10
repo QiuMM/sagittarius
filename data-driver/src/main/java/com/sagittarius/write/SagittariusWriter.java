@@ -1,16 +1,16 @@
 package com.sagittarius.write;
 
-import com.datastax.driver.core.*;
+import com.datastax.driver.core.BatchStatement;
+import com.datastax.driver.core.Session;
+import com.datastax.driver.core.Statement;
 import com.datastax.driver.mapping.Mapper;
 import com.datastax.driver.mapping.MappingManager;
-import com.sagittarius.bean.bulk.*;
 import com.sagittarius.bean.common.HostMetricPair;
 import com.sagittarius.bean.common.MetricMetadata;
 import com.sagittarius.bean.common.TimePartition;
 import com.sagittarius.bean.table.*;
 import com.sagittarius.util.TimeUtil;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,10 +21,94 @@ import static com.datastax.driver.mapping.Mapper.Option.timestamp;
 public class SagittariusWriter implements Writer {
     private Session session;
     private MappingManager mappingManager;
+    private BulkData bulkData; //just for temporary use
 
     public SagittariusWriter(Session session, MappingManager mappingManager) {
         this.session = session;
         this.mappingManager = mappingManager;
+        bulkData = new BulkData();
+    }
+
+    public BulkData getBulkData() {
+        return bulkData;
+    }
+
+    public class BulkData {
+        BatchStatement batchStatement = new BatchStatement(BatchStatement.Type.UNLOGGED);
+        Map<HostMetricPair, Latest> latestData = new HashMap<>();
+
+        private void updateLatest(Latest candidate) {
+            HostMetricPair pair = new HostMetricPair(candidate.getHost(), candidate.getMetric());
+            if (latestData.containsKey(pair)) {
+                if (latestData.get(pair).getTimeSlice().compareTo(candidate.getTimeSlice()) < 0)
+                    latestData.put(pair, candidate);
+            } else {
+                latestData.put(pair, candidate);
+            }
+        }
+
+        public void addData(String host, String metric, long primaryTime, long secondaryTime, TimePartition timePartition, int value) {
+            String timeSlice = TimeUtil.generateTimeSlice(primaryTime, timePartition);
+            Long boxedSecondaryTime = secondaryTime == -1 ? null : secondaryTime;
+            Mapper<IntData> dataMapper = mappingManager.mapper(IntData.class);
+            Statement statement = dataMapper.saveQuery(new IntData(host, metric, timeSlice, primaryTime, boxedSecondaryTime, value), timestamp(primaryTime * 1000), saveNullFields(false));
+            batchStatement.add(statement);
+            updateLatest(new Latest(host, metric, timeSlice));
+        }
+
+        public void addData(String host, String metric, long primaryTime, long secondaryTime, TimePartition timePartition, long value) {
+            String timeSlice = TimeUtil.generateTimeSlice(primaryTime, timePartition);
+            Long boxedSecondaryTime = secondaryTime == -1 ? null : secondaryTime;
+            Mapper<LongData> dataMapper = mappingManager.mapper(LongData.class);
+            Statement statement = dataMapper.saveQuery(new LongData(host, metric, timeSlice, primaryTime, boxedSecondaryTime, value), timestamp(primaryTime * 1000), saveNullFields(false));
+            batchStatement.add(statement);
+            updateLatest(new Latest(host, metric, timeSlice));
+        }
+
+        public void addData(String host, String metric, long primaryTime, long secondaryTime, TimePartition timePartition, float value) {
+            String timeSlice = TimeUtil.generateTimeSlice(primaryTime, timePartition);
+            Long boxedSecondaryTime = secondaryTime == -1 ? null : secondaryTime;
+            Mapper<FloatData> dataMapper = mappingManager.mapper(FloatData.class);
+            Statement statement = dataMapper.saveQuery(new FloatData(host, metric, timeSlice, primaryTime, boxedSecondaryTime, value), timestamp(primaryTime * 1000), saveNullFields(false));
+            batchStatement.add(statement);
+            updateLatest(new Latest(host, metric, timeSlice));
+        }
+
+        public void addData(String host, String metric, long primaryTime, long secondaryTime, TimePartition timePartition, double value) {
+            String timeSlice = TimeUtil.generateTimeSlice(primaryTime, timePartition);
+            Long boxedSecondaryTime = secondaryTime == -1 ? null : secondaryTime;
+            Mapper<DoubleData> dataMapper = mappingManager.mapper(DoubleData.class);
+            Statement statement = dataMapper.saveQuery(new DoubleData(host, metric, timeSlice, primaryTime, boxedSecondaryTime, value), timestamp(primaryTime * 1000), saveNullFields(false));
+            batchStatement.add(statement);
+            updateLatest(new Latest(host, metric, timeSlice));
+        }
+
+        public void addData(String host, String metric, long primaryTime, long secondaryTime, TimePartition timePartition, boolean value) {
+            String timeSlice = TimeUtil.generateTimeSlice(primaryTime, timePartition);
+            Long boxedSecondaryTime = secondaryTime == -1 ? null : secondaryTime;
+            Mapper<BooleanData> dataMapper = mappingManager.mapper(BooleanData.class);
+            Statement statement = dataMapper.saveQuery(new BooleanData(host, metric, timeSlice, primaryTime, boxedSecondaryTime, value), timestamp(primaryTime * 1000), saveNullFields(false));
+            batchStatement.add(statement);
+            updateLatest(new Latest(host, metric, timeSlice));
+        }
+
+        public void addData(String host, String metric, long primaryTime, long secondaryTime, TimePartition timePartition, String value) {
+            String timeSlice = TimeUtil.generateTimeSlice(primaryTime, timePartition);
+            Long boxedSecondaryTime = secondaryTime == -1 ? null : secondaryTime;
+            Mapper<StringData> dataMapper = mappingManager.mapper(StringData.class);
+            Statement statement = dataMapper.saveQuery(new StringData(host, metric, timeSlice, primaryTime, boxedSecondaryTime, value), timestamp(primaryTime * 1000), saveNullFields(false));
+            batchStatement.add(statement);
+            updateLatest(new Latest(host, metric, timeSlice));
+        }
+
+        public void addData(String host, String metric, long primaryTime, long secondaryTime, TimePartition timePartition, float latitude, float longitude) {
+            String timeSlice = TimeUtil.generateTimeSlice(primaryTime, timePartition);
+            Long boxedSecondaryTime = secondaryTime == -1 ? null : secondaryTime;
+            Mapper<GeoData> dataMapper = mappingManager.mapper(GeoData.class);
+            Statement statement = dataMapper.saveQuery(new GeoData(host, metric, timeSlice, primaryTime, boxedSecondaryTime, latitude, longitude), timestamp(primaryTime * 1000), saveNullFields(false));
+            batchStatement.add(statement);
+            updateLatest(new Latest(host, metric, timeSlice));
+        }
     }
 
     @Override
@@ -127,252 +211,14 @@ public class SagittariusWriter implements Writer {
         latestMapper.save(new Latest(host, metric, timeSlice), saveNullFields(false));
     }
 
-    private void insertAsync(List<Statement> statements, int threads) {
-        List<ResultSetFuture> futures = new ArrayList<>();
-        int count = 0;
-        for (Statement statement : statements) {
-            ResultSetFuture future = session.executeAsync(statement);
-            futures.add(future);
-            ++count;
-            if(count % threads==0){
-                futures.forEach(ResultSetFuture::getUninterruptibly);
-                futures = new ArrayList<>();
-            }
-        }
-    }
-
-    @Override
-    public void bulkInsert(BulkIntData bulkIntData, int threads) {
-        Mapper<IntData> dataMapper = mappingManager.mapper(IntData.class);
+    public void bulkInsert(BulkData bulkData) { //just for temporary use
         Mapper<Latest> latestMapper = mappingManager.mapper(Latest.class);
-        List<Statement> statements = new ArrayList<>();
-        //each host_metric pair corresponding to it's latest data
-        Map<HostMetricPair, IntData> latestData = new HashMap<>();
-
-        //generate insert statements
-        for (IntData data : bulkIntData.getDatas()) {
-            Statement statement = dataMapper.saveQuery(data, timestamp(data.getPrimaryTime() * 1000), saveNullFields(false));
-            statements.add(statement);
-            //update latest data by comparing primaryTime
-            HostMetricPair pair = new HostMetricPair(data.getHost(), data.getMetric());
-            if (latestData.containsKey(pair)) {
-                if (latestData.get(pair).getPrimaryTime() < data.getPrimaryTime())
-                    latestData.put(pair, data);
-            } else {
-                latestData.put(pair, data);
-            }
+        for (Map.Entry<HostMetricPair, Latest> entry : bulkData.latestData.entrySet()) {
+            Statement statement = latestMapper.saveQuery(entry.getValue(), saveNullFields(false));
+            bulkData.batchStatement.add(statement);
         }
-        for (Map.Entry<HostMetricPair, IntData> entry : latestData.entrySet()) {
-            IntData data = entry.getValue();
-            Latest latest = new Latest(data.getHost(), data.getMetric(), data.getTimeSlice());
-            Statement statement = latestMapper.saveQuery(latest, saveNullFields(false));
-            statements.add(statement);
-        }
-
-        //execute insert statements by async
-        insertAsync(statements, threads);
-    }
-
-    @Override
-    public void bulkInsert(BulkLongData bulkLongData, int threads) {
-        Mapper<LongData> dataMapper = mappingManager.mapper(LongData.class);
-        Mapper<Latest> latestMapper = mappingManager.mapper(Latest.class);
-        List<Statement> statements = new ArrayList<>();
-        Map<HostMetricPair, LongData> latestData = new HashMap<>();
-
-        for (LongData data : bulkLongData.getDatas()) {
-            Statement statement = dataMapper.saveQuery(data, timestamp(data.getPrimaryTime() * 1000), saveNullFields(false));
-            statements.add(statement);
-
-            HostMetricPair pair = new HostMetricPair(data.getHost(), data.getMetric());
-            if (latestData.containsKey(pair)) {
-                if (latestData.get(pair).getPrimaryTime() < data.getPrimaryTime())
-                    latestData.put(pair, data);
-            } else {
-                latestData.put(pair, data);
-            }
-        }
-        for (Map.Entry<HostMetricPair, LongData> entry : latestData.entrySet()) {
-            LongData data = entry.getValue();
-            Latest latest = new Latest(data.getHost(), data.getMetric(), data.getTimeSlice());
-            Statement statement = latestMapper.saveQuery(latest, saveNullFields(false));
-            statements.add(statement);
-        }
-
-        insertAsync(statements, threads);
-    }
-
-    @Override
-    public void bulkInsert(BulkFloatData bulkFloatData, int threads) {
-        Mapper<FloatData> dataMapper = mappingManager.mapper(FloatData.class);
-        Mapper<Latest> latestMapper = mappingManager.mapper(Latest.class);
-        List<Statement> statements = new ArrayList<>();
-        Map<HostMetricPair, FloatData> latestData = new HashMap<>();
-
-        for (FloatData data : bulkFloatData.getDatas()) {
-            Statement statement = dataMapper.saveQuery(data, timestamp(data.getPrimaryTime() * 1000), saveNullFields(false));
-            statements.add(statement);
-
-            HostMetricPair pair = new HostMetricPair(data.getHost(), data.getMetric());
-            if (latestData.containsKey(pair)) {
-                if (latestData.get(pair).getPrimaryTime() < data.getPrimaryTime())
-                    latestData.put(pair, data);
-            } else {
-                latestData.put(pair, data);
-            }
-        }
-        for (Map.Entry<HostMetricPair, FloatData> entry : latestData.entrySet()) {
-            FloatData data = entry.getValue();
-            Latest latest = new Latest(data.getHost(), data.getMetric(), data.getTimeSlice());
-            Statement statement = latestMapper.saveQuery(latest, saveNullFields(false));
-            statements.add(statement);
-        }
-
-        insertAsync(statements, threads);
-    }
-
-    @Override
-    public void bulkInsert(BulkDoubleData bulkDoubleData, int threads) {
-        Mapper<DoubleData> dataMapper = mappingManager.mapper(DoubleData.class);
-        Mapper<Latest> latestMapper = mappingManager.mapper(Latest.class);
-        List<Statement> statements = new ArrayList<>();
-        Map<HostMetricPair, DoubleData> latestData = new HashMap<>();
-
-        for (DoubleData data : bulkDoubleData.getDatas()) {
-            Statement statement = dataMapper.saveQuery(data, timestamp(data.getPrimaryTime() * 1000), saveNullFields(false));
-            statements.add(statement);
-
-            HostMetricPair pair = new HostMetricPair(data.getHost(), data.getMetric());
-            if (latestData.containsKey(pair)) {
-                if (latestData.get(pair).getPrimaryTime() < data.getPrimaryTime())
-                    latestData.put(pair, data);
-            } else {
-                latestData.put(pair, data);
-            }
-        }
-        for (Map.Entry<HostMetricPair, DoubleData> entry : latestData.entrySet()) {
-            DoubleData data = entry.getValue();
-            Latest latest = new Latest(data.getHost(), data.getMetric(), data.getTimeSlice());
-            Statement statement = latestMapper.saveQuery(latest, saveNullFields(false));
-            statements.add(statement);
-        }
-
-        insertAsync(statements, threads);
-    }
-
-    @Override
-    public void bulkInsert(BulkDoubleData bulkDoubleData) {
-        Mapper<DoubleData> dataMapper = mappingManager.mapper(DoubleData.class);
-        Mapper<Latest> latestMapper = mappingManager.mapper(Latest.class);
-        BatchStatement batchStatement = new BatchStatement(BatchStatement.Type.UNLOGGED);
-        Map<HostMetricPair, DoubleData> latestData = new HashMap<>();
-
-        for (DoubleData data : bulkDoubleData.getDatas()) {
-            Statement statement = dataMapper.saveQuery(data, timestamp(data.getPrimaryTime() * 1000), saveNullFields(false));
-            batchStatement.add(statement);
-
-            HostMetricPair pair = new HostMetricPair(data.getHost(), data.getMetric());
-            if (latestData.containsKey(pair)) {
-                if (latestData.get(pair).getPrimaryTime() < data.getPrimaryTime())
-                    latestData.put(pair, data);
-            } else {
-                latestData.put(pair, data);
-            }
-        }
-        for (Map.Entry<HostMetricPair, DoubleData> entry : latestData.entrySet()) {
-            DoubleData data = entry.getValue();
-            Latest latest = new Latest(data.getHost(), data.getMetric(), data.getTimeSlice());
-            Statement statement = latestMapper.saveQuery(latest, saveNullFields(false));
-            batchStatement.add(statement);
-        }
-
-        session.execute(batchStatement);
-    }
-
-    @Override
-    public void bulkInsert(BulkBooleanData bulkBooleanData, int threads) {
-        Mapper<BooleanData> dataMapper = mappingManager.mapper(BooleanData.class);
-        Mapper<Latest> latestMapper = mappingManager.mapper(Latest.class);
-        List<Statement> statements = new ArrayList<>();
-        Map<HostMetricPair, BooleanData> latestData = new HashMap<>();
-
-        for (BooleanData data : bulkBooleanData.getDatas()) {
-            Statement statement = dataMapper.saveQuery(data, timestamp(data.getPrimaryTime() * 1000), saveNullFields(false));
-            statements.add(statement);
-
-            HostMetricPair pair = new HostMetricPair(data.getHost(), data.getMetric());
-            if (latestData.containsKey(pair)) {
-                if (latestData.get(pair).getPrimaryTime() < data.getPrimaryTime())
-                    latestData.put(pair, data);
-            } else {
-                latestData.put(pair, data);
-            }
-        }
-        for (Map.Entry<HostMetricPair, BooleanData> entry : latestData.entrySet()) {
-            BooleanData data = entry.getValue();
-            Latest latest = new Latest(data.getHost(), data.getMetric(), data.getTimeSlice());
-            Statement statement = latestMapper.saveQuery(latest, saveNullFields(false));
-            statements.add(statement);
-        }
-
-        insertAsync(statements, threads);
-    }
-
-    @Override
-    public void bulkInsert(BulkStringData bulkStringData, int threads) {
-        Mapper<StringData> dataMapper = mappingManager.mapper(StringData.class);
-        Mapper<Latest> latestMapper = mappingManager.mapper(Latest.class);
-        List<Statement> statements = new ArrayList<>();
-        Map<HostMetricPair, StringData> latestData = new HashMap<>();
-
-        for (StringData data : bulkStringData.getDatas()) {
-            Statement statement = dataMapper.saveQuery(data, timestamp(data.getPrimaryTime() * 1000), saveNullFields(false));
-            statements.add(statement);
-
-            HostMetricPair pair = new HostMetricPair(data.getHost(), data.getMetric());
-            if (latestData.containsKey(pair)) {
-                if (latestData.get(pair).getPrimaryTime() < data.getPrimaryTime())
-                    latestData.put(pair, data);
-            } else {
-                latestData.put(pair, data);
-            }
-        }
-        for (Map.Entry<HostMetricPair, StringData> entry : latestData.entrySet()) {
-            StringData data = entry.getValue();
-            Latest latest = new Latest(data.getHost(), data.getMetric(), data.getTimeSlice());
-            Statement statement = latestMapper.saveQuery(latest, saveNullFields(false));
-            statements.add(statement);
-        }
-
-        insertAsync(statements, threads);
-    }
-
-    @Override
-    public void bulkInsert(BulkGeoData bulkGeoData, int threads) {
-        Mapper<GeoData> dataMapper = mappingManager.mapper(GeoData.class);
-        Mapper<Latest> latestMapper = mappingManager.mapper(Latest.class);
-        List<Statement> statements = new ArrayList<>();
-        Map<HostMetricPair, GeoData> latestData = new HashMap<>();
-
-        for (GeoData data : bulkGeoData.getDatas()) {
-            Statement statement = dataMapper.saveQuery(data, timestamp(data.getPrimaryTime() * 1000), saveNullFields(false));
-            statements.add(statement);
-
-            HostMetricPair pair = new HostMetricPair(data.getHost(), data.getMetric());
-            if (latestData.containsKey(pair)) {
-                if (latestData.get(pair).getPrimaryTime() < data.getPrimaryTime())
-                    latestData.put(pair, data);
-            } else {
-                latestData.put(pair, data);
-            }
-        }
-        for (Map.Entry<HostMetricPair, GeoData> entry : latestData.entrySet()) {
-            GeoData data = entry.getValue();
-            Latest latest = new Latest(data.getHost(), data.getMetric(), data.getTimeSlice());
-            Statement statement = latestMapper.saveQuery(latest, saveNullFields(false));
-            statements.add(statement);
-        }
-
-        insertAsync(statements, threads);
+        session.execute(bulkData.batchStatement);
+        bulkData.latestData.clear();
+        bulkData.batchStatement.clear();
     }
 }
