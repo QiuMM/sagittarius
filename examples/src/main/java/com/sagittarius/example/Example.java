@@ -6,15 +6,14 @@ import com.sagittarius.bean.common.TimePartition;
 import com.sagittarius.bean.common.ValueType;
 import com.sagittarius.bean.query.Shift;
 import com.sagittarius.bean.result.DoublePoint;
-import com.sagittarius.bean.result.IntPoint;
 import com.sagittarius.core.SagittariusClient;
 import com.sagittarius.read.Reader;
 import com.sagittarius.write.Writer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import java.time.*;
-import java.time.LocalDate;
-import java.util.*;
+
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -29,16 +28,17 @@ public class Example {
         Cluster cluster = connection.getCluster();
         SagittariusClient client = new SagittariusClient(cluster);
         Writer writer = client.getWriter();
+        Reader reader = client.getReader();
         //registerHostMetricInfo(writer);
         //registerHostTags(writer);
         //registerOwnerInfo(writer);
-        insert(writer);
+        //insert(writer);
         //writeTest(writer, Integer.parseInt(args[0]), Integer.parseInt(args[1]));
         //batchWriteTest(writer, Integer.parseInt(args[0]), Integer.parseInt(args[1]), Integer.parseInt(args[2]));
-
+        batchWriteTest(writer, 1, 1, 1000);
         //insertLoop(writer);
-        Reader reader = client.getReader();
-        read(reader);
+
+        //read(reader);
         //readbyRange(reader);
         //readFuzzy(reader);
 
