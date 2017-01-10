@@ -6,13 +6,17 @@ import com.sagittarius.bean.bulk.BulkIntData;
 import com.sagittarius.bean.common.MetricMetadata;
 import com.sagittarius.bean.common.TimePartition;
 import com.sagittarius.bean.common.ValueType;
+import com.sagittarius.bean.query.Shift;
 import com.sagittarius.bean.result.DoublePoint;
+import com.sagittarius.bean.result.IntPoint;
 import com.sagittarius.core.SagittariusClient;
 import com.sagittarius.read.Reader;
 import com.sagittarius.write.Writer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.*;
+import java.time.LocalDate;
 import java.util.*;
 
 public class Example {
@@ -26,9 +30,16 @@ public class Example {
         //registerHostMetricInfo(writer);
         //registerHostTags(writer);
         //registerOwnerInfo(writer);
-        //insert(writer);
+        insert(writer);
         //writeTest(writer, Integer.parseInt(args[0]), Integer.parseInt(args[1]));
-        batchWriteTest(writer, Integer.parseInt(args[0]), Integer.parseInt(args[1]), Integer.parseInt(args[2]));
+        //batchWriteTest(writer, Integer.parseInt(args[0]), Integer.parseInt(args[1]), Integer.parseInt(args[2]));
+
+        //insertLoop(writer);
+        Reader reader = client.getReader();
+        read(reader);
+        //readbyRange(reader);
+        //readFuzzy(reader);
+
     }
 
     private static void writeTestAsync(Writer writer, int threads, int runTime) {
@@ -135,15 +146,57 @@ public class Example {
 
     private static void read(Reader reader) {
         List<String> hosts = new ArrayList<>();
-        hosts.add("128270");
+        hosts.add("128280");
+        hosts.add("128290");
         List<String> metrics = new ArrayList<>();
         metrics.add("APP");
-        Map<String, List<DoublePoint>> result = reader.getDoublePoint(hosts, metrics, 1482319512851L);
+        Map<String, List<DoublePoint>> result = reader.getDoubleLatest(hosts, metrics);
+        //Map<String, List<DoublePoint>> result = reader.getDoublePoint(hosts, metrics, 1482319512851L);
         for (Map.Entry<String, List<DoublePoint>> entry : result.entrySet()) {
             System.out.println(entry.getKey());
             for (DoublePoint point : entry.getValue()) {
-                //System.out.println(point.getMetric() + " " + point.getTime() + " " + point.getValue());
+                System.out.println(point.getMetric() + " " + point.getPrimaryTime()+ " " + point.getValue());
             }
+        }
+    }
+    private static void readbyRange(Reader reader) {
+        List<String> hosts = new ArrayList<>();
+        //hosts.add("131980");
+        System.out.println("查找");
+        hosts.add("128280");
+        hosts.add("1282835");
+        List<String> metrics = new ArrayList<>();
+        metrics.add("APP");
+        LocalDateTime start = LocalDateTime.of(1993,10,11,0,0);
+        LocalDateTime end = LocalDateTime.of(1993,10,14,5,59);
+        Map<String, List<DoublePoint>> result = reader.getDoubleRange(hosts, metrics,start.toEpochSecond(ZoneOffset.UTC)*1000,end.toEpochSecond(ZoneOffset.UTC)*1000);
+        //Map<String, List<DoublePoint>> result = reader.getDoublePoint(hosts, metrics, 1482319512851L);
+        for (Map.Entry<String, List<DoublePoint>> entry : result.entrySet()) {
+            System.out.println(entry.getKey());
+            for (DoublePoint point : entry.getValue()) {
+                System.out.println(point.getMetric() + " " + point.getPrimaryTime()+" "+ LocalDateTime.ofEpochSecond(point.getPrimaryTime()/1000,0,ZoneOffset.UTC) + " " + point.getValue());
+            }
+        }
+    }
+
+    private static void readFuzzy(Reader reader) {
+
+        String host="128280";
+        String metric="APP";
+        DoublePoint point =  reader.getFuzzyDoublePoint(host,metric,1483712410000L, Shift.NEAREST);
+        System.out.println(point.getMetric() + " " + point.getPrimaryTime() + " " + point.getValue());
+
+    }
+
+    private static void insertLoop(Writer writer) {
+        LocalDateTime start = LocalDateTime.of(1993,10,12,0,0);
+        LocalDateTime end = LocalDateTime.of(1993,10,14,23,59);
+        System.out.println("插入");
+        while (!start.isAfter(end)) {
+            double value=Math.random()*100;
+            writer.insert("1282835", "APP", start.toEpochSecond(ZoneOffset.UTC)*1000, start.toEpochSecond(ZoneOffset.UTC)*1000, TimePartition.DAY,value );
+            System.out.println("APP" + " " + start.toEpochSecond(ZoneOffset.UTC)*1000+" "+ start.toString()+ " " + value);
+            start = start.plusHours(6);
         }
     }
 
@@ -152,8 +205,8 @@ public class Example {
         long time2 = System.currentTimeMillis();
         System.out.println(time1);
         System.out.println(time2);
-        writer.insert("128280", "ECT", time1, -1, TimePartition.DAY, 5);
-        writer.insert("128280", "APP", time1, time2, TimePartition.DAY, 5.12d);
+        writer.insert("128280", "APP", time1, -1, TimePartition.DAY, 5.20d);
+
     }
 
     private static void registerHostMetricInfo(Writer writer) {
