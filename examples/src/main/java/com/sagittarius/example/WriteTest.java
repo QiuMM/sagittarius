@@ -3,9 +3,9 @@ package com.sagittarius.example;
 import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.exceptions.NoHostAvailableException;
 import com.datastax.driver.core.exceptions.WriteTimeoutException;
-import com.sagittarius.bean.bulk.BulkDoubleData;
 import com.sagittarius.bean.common.TimePartition;
 import com.sagittarius.core.SagittariusClient;
+import com.sagittarius.write.SagittariusWriter;
 import com.sagittarius.write.Writer;
 import org.apache.commons.io.ByteOrderMark;
 import org.apache.commons.io.input.BOMInputStream;
@@ -83,7 +83,7 @@ public class WriteTest {
 
 
         private final Logger logger = LoggerFactory.getLogger(WriteByXlsTask.class);
-        private Writer writer;
+        private SagittariusWriter writer;
         private String host;
         private long count;
         private double throughput;
@@ -106,7 +106,7 @@ public class WriteTest {
         }
 
         public WriteByXlsTask(Writer writer) {
-            this.writer = writer;
+            this.writer = (SagittariusWriter)writer;
             count = 0;
             throughput = 0;
             consumeTime = 0;
@@ -125,7 +125,7 @@ public class WriteTest {
                 int offset = 3; //从第4列开始为传感器
                 Sheet sheet = wb.getSheetAt(0);
                 int rowSize = sheet.getLastRowNum() + 1;
-                BulkDoubleData datas = new BulkDoubleData();
+                SagittariusWriter.BulkData datas = writer.newBulkData();
                 int batchCount = batchSize;
                 double value;
                 List<String> metrics = new ArrayList<>();
@@ -153,7 +153,7 @@ public class WriteTest {
                                 }catch (NoHostAvailableException | WriteTimeoutException e) {
                                     //logger.info(e.getMessage());
                                 }
-                                datas = new BulkDoubleData();
+                                datas = writer.newBulkData();
                                 batchCount = batchSize;
                             }
                             try {

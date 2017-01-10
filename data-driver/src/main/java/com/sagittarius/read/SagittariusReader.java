@@ -11,7 +11,14 @@ import com.sagittarius.bean.result.*;
 import com.sagittarius.bean.table.*;
 import com.sagittarius.util.TimeUtil;
 
+import java.time.LocalDate;
+
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.*;
+
+import static java.time.temporal.ChronoField.ALIGNED_WEEK_OF_YEAR;
+
 
 public class SagittariusReader implements Reader {
     private MappingManager mappingManager;
@@ -50,14 +57,14 @@ public class SagittariusReader implements Reader {
         return table;
     }
 
-    private List<ResultSet> getPointResultSet(List<String> hosts, List<String> metrics, long Time, ValueType valueType) {
+    private List<ResultSet> getPointResultSet(List<String> hosts, List<String> metrics, long time, ValueType valueType) {
         String table = getTableByType(valueType);
         List<ResultSet> resultSets = new ArrayList<>();
         Mapper<HostMetric> mapper = mappingManager.mapper(HostMetric.class);
         Result<HostMetric> hostMetrics = ReadHelper.getHostMetrics(session, mapper, hosts, metrics);
-        Map<String, Map<String, Set<String>>> TimeSliceHostMetric = ReadHelper.getTimeSlicePartedHostMetric(hostMetrics, Time);
-        for (Map.Entry<String, Map<String, Set<String>>> entry : TimeSliceHostMetric.entrySet()) {
-            SimpleStatement statement = new SimpleStatement(String.format(QueryStatement.POINT_QUERY_STATEMENT, table, ReadHelper.generateInStatement(entry.getValue().get("hosts")), ReadHelper.generateInStatement(entry.getValue().get("metrics")), entry.getKey(), Time));
+        Map<String, Map<String, Set<String>>> timeSliceHostMetric = ReadHelper.getTimeSlicePartedHostMetrics(hostMetrics, time);
+        for (Map.Entry<String, Map<String, Set<String>>> entry : timeSliceHostMetric.entrySet()) {
+            SimpleStatement statement = new SimpleStatement(String.format(QueryStatement.POINT_QUERY_STATEMENT, table, ReadHelper.generateInStatement(entry.getValue().get("hosts")), ReadHelper.generateInStatement(entry.getValue().get("metrics")), entry.getKey(), time));
             ResultSet set = session.execute(statement);
             resultSets.add(set);
         }
@@ -65,8 +72,8 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, List<IntPoint>> getIntPoint(List<String> hosts, List<String> metrics, long Time, Shift shift) {
-        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, Time, ValueType.INT);
+    public Map<String, List<IntPoint>> getIntPoint(List<String> hosts, List<String> metrics, long time) {
+        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.INT);
         List<IntData> datas = new ArrayList<>();
         Mapper<IntData> mapper = mappingManager.mapper(IntData.class);
         for (ResultSet rs : resultSets) {
@@ -89,8 +96,8 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, List<LongPoint>> getLongPoint(List<String> hosts, List<String> metrics, long Time, Shift shift) {
-        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, Time, ValueType.LONG);
+    public Map<String, List<LongPoint>> getLongPoint(List<String> hosts, List<String> metrics, long time) {
+        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.LONG);
         List<LongData> datas = new ArrayList<>();
         Mapper<LongData> mapper = mappingManager.mapper(LongData.class);
         for (ResultSet rs : resultSets) {
@@ -113,8 +120,8 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, List<FloatPoint>> getFloatPoint(List<String> hosts, List<String> metrics, long Time, Shift shift) {
-        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, Time, ValueType.FLOAT);
+    public Map<String, List<FloatPoint>> getFloatPoint(List<String> hosts, List<String> metrics, long time) {
+        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.FLOAT);
         List<FloatData> datas = new ArrayList<>();
         Mapper<FloatData> mapper = mappingManager.mapper(FloatData.class);
         for (ResultSet rs : resultSets) {
@@ -137,8 +144,8 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, List<DoublePoint>> getDoublePoint(List<String> hosts, List<String> metrics, long Time, Shift shift) {
-        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, Time, ValueType.DOUBLE);
+    public Map<String, List<DoublePoint>> getDoublePoint(List<String> hosts, List<String> metrics, long time) {
+        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.DOUBLE);
         List<DoubleData> datas = new ArrayList<>();
         Mapper<DoubleData> mapper = mappingManager.mapper(DoubleData.class);
         for (ResultSet rs : resultSets) {
@@ -161,8 +168,8 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, List<BooleanPoint>> getBooleanPoint(List<String> hosts, List<String> metrics, long Time, Shift shift) {
-        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, Time, ValueType.BOOLEAN);
+    public Map<String, List<BooleanPoint>> getBooleanPoint(List<String> hosts, List<String> metrics, long time) {
+        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.BOOLEAN);
         List<BooleanData> datas = new ArrayList<>();
         Mapper<BooleanData> mapper = mappingManager.mapper(BooleanData.class);
         for (ResultSet rs : resultSets) {
@@ -185,8 +192,8 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, List<StringPoint>> getStringPoint(List<String> hosts, List<String> metrics, long Time, Shift shift) {
-        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, Time, ValueType.STRING);
+    public Map<String, List<StringPoint>> getStringPoint(List<String> hosts, List<String> metrics, long time) {
+        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.STRING);
         List<StringData> datas = new ArrayList<>();
         Mapper<StringData> mapper = mappingManager.mapper(StringData.class);
         for (ResultSet rs : resultSets) {
@@ -209,8 +216,8 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, List<GeoPoint>> getGeoPoint(List<String> hosts, List<String> metrics, long Time, Shift shift) {
-        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, Time, ValueType.GEO);
+    public Map<String, List<GeoPoint>> getGeoPoint(List<String> hosts, List<String> metrics, long time) {
+        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.GEO);
         List<GeoData> datas = new ArrayList<>();
         Mapper<GeoData> mapper = mappingManager.mapper(GeoData.class);
         for (ResultSet rs : resultSets) {
@@ -232,112 +239,440 @@ public class SagittariusReader implements Reader {
         return result;
     }
 
-    private ResultSet getLatestResultSet(List<String> hosts, List<String> metrics, ValueType valueType) {
-        String table = null;
-        switch (valueType) {
-            case INT:
-                table = "latest_int";
-                break;
-            case LONG:
-                table = "latest_long";
-                break;
-            case FLOAT:
-                table = "latest_float";
-                break;
-            case DOUBLE:
-                table = "latest_double";
-                break;
-            case BOOLEAN:
-                table = "latest_boolean";
-                break;
-            case STRING:
-                table = "latest_text";
-                break;
-            case GEO:
-                table = "latest_geo";
-                break;
+    private List<ResultSet> getPointResultSet(String host, String metric, long time, ValueType valueType, Shift shift) {
+        String table = getTableByType(valueType);
+        List<ResultSet> resultSets = new ArrayList<>();
+        Mapper<HostMetric> mapper = mappingManager.mapper(HostMetric.class);
+        Statement statement = new SimpleStatement(String.format(QueryStatement.HOST_METRIC_QUERY_STATEMENT, host, metric));
+        ResultSet rs = session.execute(statement);
+        Result<HostMetric> hostMetric = mapper.map(rs);
+
+        String timeSlice = TimeUtil.generateTimeSlice(time, hostMetric.one().getTimePartition());
+
+        if (shift == Shift.NEAREST) {
+            statement = new SimpleStatement(String.format(QueryStatement.POINT_BEFORE_SHIFT_QUERY_STATEMENT, table, host, metric, timeSlice, time));
+            ResultSet setBefore = session.execute(statement);
+            resultSets.add(setBefore);
+            statement = new SimpleStatement(String.format(QueryStatement.POINT_AFTER_SHIFT_QUERY_STATEMENT, table, host, metric, timeSlice, time));
+            ResultSet setAfter = session.execute(statement);
+            resultSets.add(setAfter);
+            return resultSets;
         }
 
-        SimpleStatement statement = new SimpleStatement(String.format(QueryStatement.LATEST_QUERY_STATEMENT, table, ReadHelper.generateInStatement(hosts), ReadHelper.generateInStatement(metrics)));
-        return session.execute(statement);
+        String queryStatement;
+        switch (shift) {
+            case BEFORE:
+                queryStatement = QueryStatement.POINT_BEFORE_SHIFT_QUERY_STATEMENT;
+                break;
+            case AFTER:
+                queryStatement = QueryStatement.POINT_AFTER_SHIFT_QUERY_STATEMENT;
+                break;
+            default:
+                queryStatement = QueryStatement.POINT_QUERY_STATEMENT;
+        }
+
+        statement = new SimpleStatement(String.format(queryStatement, table, host, metric, timeSlice, time));
+        ResultSet set = session.execute(statement);
+        resultSets.add(set);
+        return resultSets;
+    }
+
+    @Override
+    public IntPoint getFuzzyIntPoint(String hosts, String metrics, long time, Shift shift) {
+        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.INT, shift);
+        Mapper<IntData> mapper = mappingManager.mapper(IntData.class);
+        if (resultSets.size() == 1) {
+            IntData data = mapper.map(resultSets.get(0)).one();
+            return new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue());
+        } else {
+            IntData dataBefore = mapper.map(resultSets.get(0)).one();
+            IntData dataAfter = mapper.map(resultSets.get(1)).one();
+            if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
+                return new IntPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.getSecondaryTime(), dataAfter.getValue());
+            else
+                return new IntPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.getSecondaryTime(), dataBefore.getValue());
+        }
+    }
+
+    @Override
+    public LongPoint getFuzzyLongPoint(String hosts, String metrics, long time, Shift shift) {
+        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.LONG, shift);
+        Mapper<LongData> mapper = mappingManager.mapper(LongData.class);
+        if (resultSets.size() == 1) {
+            LongData data = mapper.map(resultSets.get(0)).one();
+            return new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue());
+        } else {
+            LongData dataBefore = mapper.map(resultSets.get(0)).one();
+            LongData dataAfter = mapper.map(resultSets.get(1)).one();
+            if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
+                return new LongPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.getSecondaryTime(), dataAfter.getValue());
+            else
+                return new LongPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.getSecondaryTime(), dataBefore.getValue());
+        }
+    }
+
+    @Override
+    public FloatPoint getFuzzyFloatPoint(String hosts, String metrics, long time, Shift shift) {
+        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.FLOAT, shift);
+        Mapper<FloatData> mapper = mappingManager.mapper(FloatData.class);
+        if (resultSets.size() == 1) {
+            FloatData data = mapper.map(resultSets.get(0)).one();
+            return new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue());
+        } else {
+            FloatData dataBefore = mapper.map(resultSets.get(0)).one();
+            FloatData dataAfter = mapper.map(resultSets.get(1)).one();
+            if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
+                return new FloatPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.getSecondaryTime(), dataAfter.getValue());
+            else
+                return new FloatPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.getSecondaryTime(), dataBefore.getValue());
+        }
+    }
+
+    @Override
+    public DoublePoint getFuzzyDoublePoint(String hosts, String metrics, long time, Shift shift) {
+        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.DOUBLE, shift);
+        Mapper<DoubleData> mapper = mappingManager.mapper(DoubleData.class);
+        if (resultSets.size() == 1) {
+            DoubleData data = mapper.map(resultSets.get(0)).one();
+            return new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue());
+        } else {
+            DoubleData dataBefore = mapper.map(resultSets.get(0)).one();
+            DoubleData dataAfter = mapper.map(resultSets.get(1)).one();
+            if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
+                return new DoublePoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.getSecondaryTime(), dataAfter.getValue());
+            else
+                return new DoublePoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.getSecondaryTime(), dataBefore.getValue());
+        }
+    }
+
+    @Override
+    public BooleanPoint getFuzzyBooleanPoint(String hosts, String metrics, long time, Shift shift) {
+        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.BOOLEAN, shift);
+        Mapper<BooleanData> mapper = mappingManager.mapper(BooleanData.class);
+        if (resultSets.size() == 1) {
+            BooleanData data = mapper.map(resultSets.get(0)).one();
+            return new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue());
+        } else {
+            BooleanData dataBefore = mapper.map(resultSets.get(0)).one();
+            BooleanData dataAfter = mapper.map(resultSets.get(1)).one();
+            if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
+                return new BooleanPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.getSecondaryTime(), dataAfter.getValue());
+            else
+                return new BooleanPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.getSecondaryTime(), dataBefore.getValue());
+        }
+    }
+
+    @Override
+    public StringPoint getFuzzyStringPoint(String hosts, String metrics, long time, Shift shift) {
+        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.STRING, shift);
+        Mapper<StringData> mapper = mappingManager.mapper(StringData.class);
+        if (resultSets.size() == 1) {
+            StringData data = mapper.map(resultSets.get(0)).one();
+            return new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue());
+        } else {
+            StringData dataBefore = mapper.map(resultSets.get(0)).one();
+            StringData dataAfter = mapper.map(resultSets.get(1)).one();
+            if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
+                return new StringPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.getSecondaryTime(), dataAfter.getValue());
+            else
+                return new StringPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.getSecondaryTime(), dataBefore.getValue());
+        }
+    }
+
+    @Override
+    public GeoPoint getFuzzyGeoPoint(String hosts, String metrics, long time, Shift shift) {
+        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.GEO, shift);
+        Mapper<GeoData> mapper = mappingManager.mapper(GeoData.class);
+        if (resultSets.size() == 1) {
+            GeoData data = mapper.map(resultSets.get(0)).one();
+            return new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getLatitude(), data.getLongitude());
+        } else {
+            GeoData dataBefore = mapper.map(resultSets.get(0)).one();
+            GeoData dataAfter = mapper.map(resultSets.get(1)).one();
+            if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
+                return new GeoPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.getSecondaryTime(), dataAfter.getLatitude(), dataAfter.getLongitude());
+            else
+                return new GeoPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.getSecondaryTime(), dataBefore.getLatitude(), dataBefore.getLongitude());
+        }
+    }
+
+    private Result<Latest> getLatestResult(List<String> hosts, List<String> metrics) {
+        String table = "latest";
+        SimpleStatement statement = new SimpleStatement(String.format(QueryStatement.LATEST_TIMESLICE_QUERY_STATEMENT, table, ReadHelper.generateInStatement(hosts), ReadHelper.generateInStatement(metrics)));
+        ResultSet rs = session.execute(statement);
+        Mapper<Latest> mapper = mappingManager.mapper(Latest.class);
+        return mapper.map(rs);
+
+    }
+
+    private ResultSet getPointResultSet(String host, String metric, String timeSlice, ValueType valueType) {
+        String table = getTableByType(valueType);
+        List<ResultSet> resultSets = new ArrayList<>();
+        SimpleStatement statement = new SimpleStatement(String.format(QueryStatement.LATEST_POINT_QUERY_STATEMENT, table, host, metric, timeSlice));
+        ResultSet set = session.execute(statement);
+        return set;
     }
 
     @Override
     public Map<String, List<IntPoint>> getIntLatest(List<String> hosts, List<String> metrics) {
-        /*ResultSet rs = getLatestResultSet(hosts, metrics, ValueType.INT);
-        Mapper<IntLatest> mapper = mappingManager.mapper(IntLatest.class);
-        Result<IntLatest> latests = mapper.map(rs);
-
+        Result<Latest> latests = getLatestResult(hosts, metrics);
+        ResultSet rs;
+        Mapper<IntData> mapperInt = mappingManager.mapper(IntData.class);
         Map<String, List<IntPoint>> result = new HashMap<>();
-        for (IntLatest latest : latests) {
+
+        for (Latest latest : latests) {
             String host = latest.getHost();
+            String metric = latest.getMetric();
+            String timeSlice = latest.getTimeSlice();
+            rs = getPointResultSet(host, metric, timeSlice, ValueType.INT);
+            IntData data = mapperInt.map(rs).one();
             if (result.containsKey(host)) {
-                result.get(host).add(new IntPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
+                result.get(host).add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
             } else {
                 List<IntPoint> points = new ArrayList<>();
-                points.add(new IntPoint(latest.getMetric(), latest.getPrimaryTime(), latest.getValue()));
+                points.add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
                 result.put(host, points);
             }
-        }*/
+        }
 
-        return null;
+        return result;
     }
 
     @Override
     public Map<String, List<LongPoint>> getLongLatest(List<String> hosts, List<String> metrics) {
-        return null;
+        Result<Latest> latests = getLatestResult(hosts, metrics);
+        ResultSet rs;
+        Mapper<LongData> mapperInt = mappingManager.mapper(LongData.class);
+        Map<String, List<LongPoint>> result = new HashMap<>();
+
+        for (Latest latest : latests) {
+            String host = latest.getHost();
+            String metric = latest.getMetric();
+            String timeSlice = latest.getTimeSlice();
+            rs = getPointResultSet(host, metric, timeSlice, ValueType.LONG);
+            LongData data = mapperInt.map(rs).one();
+            if (result.containsKey(host)) {
+                result.get(host).add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+            } else {
+                List<LongPoint> points = new ArrayList<>();
+                points.add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.put(host, points);
+            }
+        }
+
+        return result;
     }
 
     @Override
     public Map<String, List<FloatPoint>> getFloatLatest(List<String> hosts, List<String> metrics) {
-        return null;
+        Result<Latest> latests = getLatestResult(hosts, metrics);
+        ResultSet rs;
+        Mapper<FloatData> mapperInt = mappingManager.mapper(FloatData.class);
+        Map<String, List<FloatPoint>> result = new HashMap<>();
+
+        for (Latest latest : latests) {
+            String host = latest.getHost();
+            String metric = latest.getMetric();
+            String timeSlice = latest.getTimeSlice();
+            rs = getPointResultSet(host, metric, timeSlice, ValueType.FLOAT);
+            FloatData data = mapperInt.map(rs).one();
+            if (result.containsKey(host)) {
+                result.get(host).add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+            } else {
+                List<FloatPoint> points = new ArrayList<>();
+                points.add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.put(host, points);
+            }
+        }
+
+        return result;
     }
 
     @Override
     public Map<String, List<DoublePoint>> getDoubleLatest(List<String> hosts, List<String> metrics) {
-        return null;
+        Result<Latest> latests = getLatestResult(hosts, metrics);
+        ResultSet rs;
+        Mapper<DoubleData> mapperInt = mappingManager.mapper(DoubleData.class);
+        Map<String, List<DoublePoint>> result = new HashMap<>();
+
+        for (Latest latest : latests) {
+            String host = latest.getHost();
+            String metric = latest.getMetric();
+            String timeSlice = latest.getTimeSlice();
+            rs = getPointResultSet(host, metric, timeSlice, ValueType.DOUBLE);
+            DoubleData data = mapperInt.map(rs).one();
+
+            if (result.containsKey(host)) {
+                result.get(host).add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+            } else {
+                List<DoublePoint> points = new ArrayList<>();
+                points.add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.put(host, points);
+            }
+        }
+
+        return result;
     }
 
     @Override
     public Map<String, List<BooleanPoint>> getBooleanLatest(List<String> hosts, List<String> metrics) {
-        return null;
+        Result<Latest> latests = getLatestResult(hosts, metrics);
+        ResultSet rs;
+        Mapper<BooleanData> mapperInt = mappingManager.mapper(BooleanData.class);
+        Map<String, List<BooleanPoint>> result = new HashMap<>();
+
+        for (Latest latest : latests) {
+            String host = latest.getHost();
+            String metric = latest.getMetric();
+            String timeSlice = latest.getTimeSlice();
+            rs = getPointResultSet(host, metric, timeSlice, ValueType.BOOLEAN);
+            BooleanData data = mapperInt.map(rs).one();
+            if (result.containsKey(host)) {
+                result.get(host).add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+            } else {
+                List<BooleanPoint> points = new ArrayList<>();
+                points.add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.put(host, points);
+            }
+        }
+
+        return result;
     }
 
     @Override
     public Map<String, List<StringPoint>> getStringLatest(List<String> hosts, List<String> metrics) {
-        return null;
+        Result<Latest> latests = getLatestResult(hosts, metrics);
+        ResultSet rs;
+        Mapper<StringData> mapperInt = mappingManager.mapper(StringData.class);
+        Map<String, List<StringPoint>> result = new HashMap<>();
+
+        for (Latest latest : latests) {
+            String host = latest.getHost();
+            String metric = latest.getMetric();
+            String timeSlice = latest.getTimeSlice();
+            rs = getPointResultSet(host, metric, timeSlice, ValueType.STRING);
+            StringData data = mapperInt.map(rs).one();
+            if (result.containsKey(host)) {
+                result.get(host).add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+            } else {
+                List<StringPoint> points = new ArrayList<>();
+                points.add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.put(host, points);
+            }
+        }
+
+        return result;
     }
 
     @Override
     public Map<String, List<GeoPoint>> getGeoLatest(List<String> hosts, List<String> metrics) {
-        return null;
+        Result<Latest> latests = getLatestResult(hosts, metrics);
+        ResultSet rs;
+        Mapper<GeoData> mapperInt = mappingManager.mapper(GeoData.class);
+        Map<String, List<GeoPoint>> result = new HashMap<>();
+
+        for (Latest latest : latests) {
+            String host = latest.getHost();
+            String metric = latest.getMetric();
+            String timeSlice = latest.getTimeSlice();
+            rs = getPointResultSet(host, metric, timeSlice, ValueType.GEO);
+            GeoData data = mapperInt.map(rs).one();
+            if (result.containsKey(host)) {
+                result.get(host).add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getLatitude(), data.getLongitude()));
+            } else {
+                List<GeoPoint> points = new ArrayList<>();
+                points.add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getLatitude(), data.getLongitude()));
+                result.put(host, points);
+            }
+        }
+
+        return result;
     }
 
     private List<String> getRangeQueryString(List<String> hosts, List<String> metrics, long startTime, long endTime, ValueType valueType) {
         String table = getTableByType(valueType);
         Mapper<HostMetric> mapper = mappingManager.mapper(HostMetric.class);
         Result<HostMetric> hostMetrics = ReadHelper.getHostMetrics(session, mapper, hosts, metrics);
-        Map<String, Map<String, Set<String>>> TimeSliceHostMetric = ReadHelper.getTimeSlicePartedHostMetric(hostMetrics, startTime);
+        Map<String, Map<String, Set<String>>> TimeSliceHostMetric = ReadHelper.getTimeSlicePartedHostMetrics(hostMetrics, startTime);
         List<String> querys = new ArrayList<>();
+        long startTimeSecond = startTime / 1000;
+        long endTimeSecond = endTime / 1000;
+
 
         for (Map.Entry<String, Map<String, Set<String>>> entry : TimeSliceHostMetric.entrySet()) {
             String startTimeSlice = entry.getKey();
+            String hostsString = ReadHelper.generateInStatement(entry.getValue().get("hosts"));
+            String metricsString = ReadHelper.generateInStatement(entry.getValue().get("metrics"));
+            TimePartition timePartition;
             if (startTimeSlice.contains("D")) {
-                String endTimeSlice = TimeUtil.generateTimeSlice(endTime, TimePartition.DAY);
-                String TimeSliceHead = startTimeSlice.substring(0, startTimeSlice.indexOf("D") + 1);
-                int startDay = Integer.parseInt(startTimeSlice.substring(startTimeSlice.indexOf("D") + 1));
-                int endDay = Integer.parseInt(endTimeSlice.substring(startTimeSlice.indexOf("D") + 1));
-                if (endDay > startDay) {
-                    for (int i = startDay + 1; i < endDay; ++i) {
-                        String query = String.format(QueryStatement.WHOLE_PARTITION_QUERY_STATEMENT, table, ReadHelper.generateInStatement(entry.getValue().get("hosts")), ReadHelper.generateInStatement(entry.getValue().get("metrics")), TimeSliceHead + i);
-                        querys.add(query);
-                    }
-                    String startQuery = String.format(QueryStatement.PARTIAL_PARTITION_QUERY_STATEMENT, table, ReadHelper.generateInStatement(entry.getValue().get("hosts")), ReadHelper.generateInStatement(entry.getValue().get("metrics")), startTimeSlice, ">", startTime);
-                    String endQuery = String.format(QueryStatement.PARTIAL_PARTITION_QUERY_STATEMENT, table, ReadHelper.generateInStatement(entry.getValue().get("hosts")), ReadHelper.generateInStatement(entry.getValue().get("metrics")), endTimeSlice, "<", endTime);
-                    querys.add(startQuery);
-                    querys.add(endQuery);
+                timePartition = TimePartition.DAY;
+            } else if (startTimeSlice.contains("W")) {
+                timePartition = TimePartition.WEEK;
+            } else if (startTimeSlice.contains("M")) {
+                timePartition = TimePartition.MONTH;
+            } else {
+                timePartition = TimePartition.YEAR;
+            }
+
+            String endTimeSlice = TimeUtil.generateTimeSlice(endTime, timePartition);
+            if (startTimeSlice.equals(endTimeSlice)) { //同一天
+                String query = String.format(QueryStatement.IN_PARTITION_QUERY_STATEMENT, table, hostsString, metricsString, startTimeSlice, startTime, endTime);
+                querys.add(query);
+                return querys;
+            }
+            LocalDateTime start = LocalDateTime.ofEpochSecond(startTimeSecond, 0, ZoneOffset.UTC);
+            LocalDateTime end = LocalDateTime.ofEpochSecond(endTimeSecond, 0, ZoneOffset.UTC);
+            List<LocalDateTime> totalDates = new ArrayList<>();
+            while (!start.isAfter(end)) {
+                totalDates.add(start);
+                switch (timePartition) {
+                    case DAY:
+                        start = start.plusDays(1);
+                        break;
+                    case WEEK:
+                        start = start.plusWeeks(1);
+                        break;
+                    case MONTH:
+                        start = start.plusMonths(1);
+                        break;
+                    case YEAR:
+                        start = start.plusYears(1);
+                        break;
                 }
             }
+            String startQuery = String.format(QueryStatement.PARTIAL_PARTITION_QUERY_STATEMENT, table, hostsString, metricsString, startTimeSlice, ">=", startTime);
+            querys.add(startQuery);
+            for (int i = 1; i < totalDates.size() - 1; ++i) { //因为最后一个可能和end在同一个timePartition
+                String query = String.format(QueryStatement.WHOLE_PARTITION_QUERY_STATEMENT, table, hostsString, metricsString, TimeUtil.generateTimeSlice(totalDates.get(i).toEpochSecond(ZoneOffset.UTC) * 1000, timePartition));
+                querys.add(query);
+            }
+            LocalDateTime last = totalDates.get(totalDates.size() - 1);
+            boolean ifRepeat = true;
+            switch (timePartition) {
+                case DAY:
+                    if(last.getDayOfYear()!=end.getDayOfYear())
+                        ifRepeat=false;
+                    break;
+                case WEEK:
+                    if (last.getDayOfWeek().compareTo(end.getDayOfWeek()) <= 0)
+                        ifRepeat = false;
+                    break;
+                case MONTH:
+                    if (last.getMonthValue()!= end.getMonthValue())
+                        ifRepeat = false;
+                    break;
+                case YEAR:
+                    if (last.getYear() != end.getYear())
+                        ifRepeat = false;
+                    break;
+            }
+            if (!ifRepeat) {
+                String query = String.format(QueryStatement.WHOLE_PARTITION_QUERY_STATEMENT, table, hostsString, metricsString, TimeUtil.generateTimeSlice(last.toEpochSecond(ZoneOffset.UTC) * 1000, timePartition));
+                querys.add(query);
+            }
+            String endQuery = String.format(QueryStatement.PARTIAL_PARTITION_QUERY_STATEMENT, table, hostsString, metricsString, endTimeSlice, "<=", endTime);
+            querys.add(endQuery);
+
         }
 
         return querys;
@@ -345,6 +680,9 @@ public class SagittariusReader implements Reader {
 
     @Override
     public Map<String, List<IntPoint>> getIntRange(List<String> hosts, List<String> metrics, long startTime, long endTime) {
+        if (endTime < startTime)
+            return null;
+
         List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.INT);
         Mapper<IntData> mapper = mappingManager.mapper(IntData.class);
         List<IntData> datas = new ArrayList<>();

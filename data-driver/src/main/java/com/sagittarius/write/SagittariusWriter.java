@@ -21,16 +21,14 @@ import static com.datastax.driver.mapping.Mapper.Option.timestamp;
 public class SagittariusWriter implements Writer {
     private Session session;
     private MappingManager mappingManager;
-    private BulkData bulkData; //just for temporary use
 
     public SagittariusWriter(Session session, MappingManager mappingManager) {
         this.session = session;
         this.mappingManager = mappingManager;
-        bulkData = new BulkData();
     }
 
-    public BulkData getBulkData() {
-        return bulkData;
+    public BulkData newBulkData() {
+        return new BulkData();
     }
 
     public class BulkData {
@@ -218,7 +216,5 @@ public class SagittariusWriter implements Writer {
             bulkData.batchStatement.add(statement);
         }
         session.execute(bulkData.batchStatement);
-        bulkData.latestData.clear();
-        bulkData.batchStatement.clear();
     }
 }

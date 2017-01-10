@@ -8,19 +8,40 @@ import java.util.List;
 import java.util.Map;
 
 public interface Reader {
-    Map<String, List<IntPoint>> getIntPoint(List<String> hosts, List<String> metrics, long time, Shift shift);
+    /**
+     * given hosts lists and metrics lists , get IntPoints at the query time.
+     * @param hosts lists of hosts,namely devices
+     * @param metrics lists of metrics, namely sensors
+     * @param time query time
+     * @return map of IntPoints at the query time, the key is  host name, the value is list of IntPoints related to that host
+     */
+    Map<String, List<IntPoint>> getIntPoint(List<String> hosts, List<String> metrics, long time);
 
-    Map<String, List<LongPoint>> getLongPoint(List<String> hosts, List<String> metrics, long time, Shift shift);
+    Map<String, List<LongPoint>> getLongPoint(List<String> hosts, List<String> metrics, long time);
 
-    Map<String, List<FloatPoint>> getFloatPoint(List<String> hosts, List<String> metrics, long time, Shift shift);
+    Map<String, List<FloatPoint>> getFloatPoint(List<String> hosts, List<String> metrics, long time);
 
-    Map<String, List<DoublePoint>> getDoublePoint(List<String> hosts, List<String> metrics, long time, Shift shift);
+    Map<String, List<DoublePoint>> getDoublePoint(List<String> hosts, List<String> metrics, long time);
 
-    Map<String, List<BooleanPoint>> getBooleanPoint(List<String> hosts, List<String> metrics, long time, Shift shift);
+    Map<String, List<BooleanPoint>> getBooleanPoint(List<String> hosts, List<String> metrics, long time);
 
-    Map<String, List<StringPoint>> getStringPoint(List<String> hosts, List<String> metrics, long time, Shift shift);
+    Map<String, List<StringPoint>> getStringPoint(List<String> hosts, List<String> metrics, long time);
 
-    Map<String, List<GeoPoint>> getGeoPoint(List<String> hosts, List<String> metrics, long time, Shift shift);
+    Map<String, List<GeoPoint>> getGeoPoint(List<String> hosts, List<String> metrics, long time);
+
+    IntPoint getFuzzyIntPoint(String hosts, String metrics, long time, Shift shift);
+
+    LongPoint getFuzzyLongPoint(String hosts, String metrics, long time, Shift shift);
+
+    FloatPoint getFuzzyFloatPoint(String hosts, String metrics, long time, Shift shift);
+
+    DoublePoint getFuzzyDoublePoint(String hosts, String metrics, long time, Shift shift);
+
+    BooleanPoint getFuzzyBooleanPoint(String hosts, String metrics, long time, Shift shift);
+
+    StringPoint getFuzzyStringPoint(String hosts, String metrics, long time, Shift shift);
+
+    GeoPoint getFuzzyGeoPoint(String hosts, String metrics, long time, Shift shift);
 
     Map<String, List<IntPoint>> getIntLatest(List<String> hosts, List<String> metrics);
 
