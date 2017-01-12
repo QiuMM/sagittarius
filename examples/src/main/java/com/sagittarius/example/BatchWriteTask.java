@@ -44,7 +44,7 @@ public class BatchWriteTask extends Thread {
         long time = System.currentTimeMillis();
         long consumeTime = 0;
         while ((System.currentTimeMillis() - start) < runTime * 60 * 60 * 1000) {
-            SagittariusWriter.BulkData datas = writer.newBulkData();
+            SagittariusWriter.Datas datas = writer.newDatas();
             for (int i = 0; i < batchSize; ++i) {
                 datas.addData(host, "APP", time, time, TimePartition.DAY, random.nextDouble() * 100);
                 ++time;

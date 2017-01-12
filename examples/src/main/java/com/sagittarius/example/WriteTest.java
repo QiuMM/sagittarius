@@ -125,7 +125,7 @@ public class WriteTest {
                 int offset = 3; //从第4列开始为传感器
                 Sheet sheet = wb.getSheetAt(0);
                 int rowSize = sheet.getLastRowNum() + 1;
-                SagittariusWriter.BulkData datas = writer.newBulkData();
+                SagittariusWriter.Datas datas = writer.newDatas();
                 int batchCount = batchSize;
                 double value;
                 List<String> metrics = new ArrayList<>();
@@ -153,7 +153,7 @@ public class WriteTest {
                                 }catch (NoHostAvailableException | WriteTimeoutException e) {
                                     //logger.info(e.getMessage());
                                 }
-                                datas = writer.newBulkData();
+                                datas = writer.newDatas();
                                 batchCount = batchSize;
                             }
                             try {

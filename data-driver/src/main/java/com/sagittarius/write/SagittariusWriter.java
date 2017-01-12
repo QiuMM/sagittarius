@@ -27,11 +27,11 @@ public class SagittariusWriter implements Writer {
         this.mappingManager = mappingManager;
     }
 
-    public BulkData newBulkData() {
-        return new BulkData();
+    public Datas newDatas() {
+        return new Datas();
     }
 
-    public class BulkData {
+    public class Datas {
         BatchStatement batchStatement = new BatchStatement(BatchStatement.Type.UNLOGGED);
         Map<HostMetricPair, Latest> latestData = new HashMap<>();
 
@@ -198,12 +198,12 @@ public class SagittariusWriter implements Writer {
         latestMapper.save(new Latest(host, metric, timeSlice), saveNullFields(false));
     }
 
-    public void bulkInsert(BulkData bulkData) { //just for temporary use
+    public void bulkInsert(Datas datas) { //just for temporary use
         Mapper<Latest> latestMapper = mappingManager.mapper(Latest.class);
-        for (Map.Entry<HostMetricPair, Latest> entry : bulkData.latestData.entrySet()) {
+        for (Map.Entry<HostMetricPair, Latest> entry : datas.latestData.entrySet()) {
             Statement statement = latestMapper.saveQuery(entry.getValue(), saveNullFields(false));
-            bulkData.batchStatement.add(statement);
+            datas.batchStatement.add(statement);
         }
-        session.execute(bulkData.batchStatement);
+        session.execute(datas.batchStatement);
     }
 }
