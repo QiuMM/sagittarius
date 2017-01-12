@@ -252,10 +252,12 @@ public class SagittariusReader implements Reader {
         if (shift == Shift.NEAREST) {
             statement = new SimpleStatement(String.format(QueryStatement.POINT_BEFORE_SHIFT_QUERY_STATEMENT, table, host, metric, timeSlice, time));
             ResultSet setBefore = session.execute(statement);
-            resultSets.add(setBefore);
+            if(!setBefore.isExhausted())
+                resultSets.add(setBefore);
             statement = new SimpleStatement(String.format(QueryStatement.POINT_AFTER_SHIFT_QUERY_STATEMENT, table, host, metric, timeSlice, time));
             ResultSet setAfter = session.execute(statement);
-            resultSets.add(setAfter);
+            if(!setAfter.isExhausted())
+                resultSets.add(setAfter);
             return resultSets;
         }
 
@@ -642,7 +644,8 @@ public class SagittariusReader implements Reader {
             }
             String startQuery = String.format(QueryStatement.PARTIAL_PARTITION_QUERY_STATEMENT, table, hostsString, metricsString, startTimeSlice, ">=", startTime);
             querys.add(startQuery);
-            for (int i = 1; i < totalDates.size() - 1; ++i) { //因为最后一个可能和end在同一个timePartition
+            for (int i = 1; i < totalDates.size() - 1; ++i) {
+                //the last datetime may be in the same timepartition with the end datetime, so it should be processed separately.
                 String query = String.format(QueryStatement.WHOLE_PARTITION_QUERY_STATEMENT, table, hostsString, metricsString, TimeUtil.generateTimeSlice(totalDates.get(i).toEpochSecond(ZoneOffset.UTC) * 1000, timePartition));
                 querys.add(query);
             }

@@ -128,9 +128,21 @@ public class Example {
         hosts.add("128290");
         List<String> metrics = new ArrayList<>();
         metrics.add("APP");
-
+        Map<String, List<DoublePoint>> result = reader.getDoublePoint(hosts, metrics, 1482319512851L);
+        for (Map.Entry<String, List<DoublePoint>> entry : result.entrySet()) {
+            System.out.println(entry.getKey());
+            for (DoublePoint point : entry.getValue()) {
+                System.out.println(point.getMetric() + " " + point.getPrimaryTime()+ " " + point.getValue());
+            }
+        }
+    }
+    private static void readLatest(Reader reader) {
+        List<String> hosts = new ArrayList<>();
+        hosts.add("128280");
+        hosts.add("128290");
+        List<String> metrics = new ArrayList<>();
+        metrics.add("APP");
         Map<String, List<DoublePoint>> result = reader.getDoubleLatest(hosts, metrics);
-        //Map<String, List<DoublePoint>> result = reader.getDoublePoint(hosts, metrics, 1482319512851L);
         for (Map.Entry<String, List<DoublePoint>> entry : result.entrySet()) {
             System.out.println(entry.getKey());
             for (DoublePoint point : entry.getValue()) {
@@ -149,7 +161,6 @@ public class Example {
         LocalDateTime start = LocalDateTime.of(1993,10,11,0,0);
         LocalDateTime end = LocalDateTime.of(1993,10,14,5,59);
         Map<String, List<DoublePoint>> result = reader.getDoubleRange(hosts, metrics,start.toEpochSecond(ZoneOffset.UTC)*1000,end.toEpochSecond(ZoneOffset.UTC)*1000);
-        //Map<String, List<DoublePoint>> result = reader.getDoublePoint(hosts, metrics, 1482319512851L);
         for (Map.Entry<String, List<DoublePoint>> entry : result.entrySet()) {
             System.out.println(entry.getKey());
             for (DoublePoint point : entry.getValue()) {
