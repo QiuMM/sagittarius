@@ -7,9 +7,7 @@ import com.datastax.driver.mapping.annotations.Table;
  * class map to cassandra table data_long
  */
 
-@Table(name = "data_long",
-        readConsistency = "QUORUM",
-        writeConsistency = "QUORUM")
+@Table(name = "data_long")
 public class LongData extends AbstractData {
     private long value;
 

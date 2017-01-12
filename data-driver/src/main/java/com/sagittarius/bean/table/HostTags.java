@@ -9,9 +9,7 @@ import java.util.Map;
 /**
  * class map to cassandra table host_tags
  */
-@Table(name = "host_tags",
-        readConsistency = "QUORUM",
-        writeConsistency = "QUORUM")
+@Table(name = "host_tags")
 public class HostTags {
     private String host;
     private Map<String, String> tags;

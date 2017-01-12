@@ -8,7 +8,6 @@ public class DataModel {
 
     public static final String createTable_hostMetric = "CREATE TABLE IF NOT EXISTS host_metric (host text, metric text, time_partition text, value_type text, description text, primary key(host, metric))";
     public static final String createTable_hostTags = "CREATE TABLE IF NOT EXISTS host_tags (host text, tags map<text, text>, primary key(host))";
-    public static final String createTable_owner = "CREATE TABLE IF NOT EXISTS owner (user text, host text, primary key(user, host))";
 
     public static final String createTable_int = "CREATE TABLE IF NOT EXISTS data_int (host text, metric text, time_slice text, primary_time timestamp, secondary_time timestamp, value int, primary key((host, metric, time_slice), primary_time))";
     public static final String createTable_long = "CREATE TABLE IF NOT EXISTS data_long (host text, metric text, time_slice text, primary_time timestamp, secondary_time timestamp, value bigint, primary key((host, metric, time_slice), primary_time))";
@@ -22,7 +21,6 @@ public class DataModel {
 
     public static final String createIndex_hostMetric = "CREATE INDEX IF NOT EXISTS ON host_metric (metric)";
     public static final String createIndex_hostTags = "CREATE INDEX IF NOT EXISTS ON host_tags (ENTRIES(tags))";
-    public static final String createIndex_owner = "CREATE INDEX IF NOT EXISTS ON owner (host)";
 
     public static final String createIndex_int = "CREATE CUSTOM INDEX IF NOT EXISTS ON data_int (value) USING 'org.apache.cassandra.index.sasi.SASIIndex' WITH OPTIONS = {'mode': 'PREFIX'}";
     public static final String createIndex_long = "CREATE CUSTOM INDEX IF NOT EXISTS ON data_long (value) USING 'org.apache.cassandra.index.sasi.SASIIndex' WITH OPTIONS = {'mode': 'PREFIX'}";

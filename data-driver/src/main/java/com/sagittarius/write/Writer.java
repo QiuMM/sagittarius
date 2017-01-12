@@ -22,13 +22,6 @@ public interface Writer {
     void registerHostTags(String host, Map<String, String> tags);
 
     /**
-     * register user and it's hosts, state the ownership between users and hosts.
-     * @param user the user name(or id)
-     * @param hosts hosts belong to this user
-     */
-    void registerOwnerInfo(String user, List<String> hosts);
-
-    /**
      * insert a metric data point info whose metric value type is INT.
      * there are two time parameters: primaryTime and secondaryTime.
      * primaryTime is more important than secondaryTime as their names imply.

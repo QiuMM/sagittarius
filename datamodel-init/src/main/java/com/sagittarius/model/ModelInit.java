@@ -33,7 +33,6 @@ public class ModelInit {
             session.execute("USE sagittarius");
             session.execute(DataModel.createTable_hostMetric);
             session.execute(DataModel.createTable_hostTags);
-            session.execute(DataModel.createTable_owner);
             session.execute(DataModel.createTable_int);
             session.execute(DataModel.createTable_long);
             session.execute(DataModel.createTable_float);
@@ -44,7 +43,6 @@ public class ModelInit {
             session.execute(DataModel.createTable_latest);
             session.execute(DataModel.createIndex_hostMetric);
             session.execute(DataModel.createIndex_hostTags);
-            session.execute(DataModel.createIndex_owner);
             session.execute(DataModel.createIndex_int);
             session.execute(DataModel.createIndex_long);
             session.execute(DataModel.createIndex_float);

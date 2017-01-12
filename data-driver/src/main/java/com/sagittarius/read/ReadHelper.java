@@ -12,9 +12,6 @@ import com.sagittarius.util.TimeUtil;
 
 import java.util.*;
 
-/**
- * Created by qmm on 2016/12/17.
- */
 public class ReadHelper {
 
     public static String generateInStatement(Collection<String> params) {

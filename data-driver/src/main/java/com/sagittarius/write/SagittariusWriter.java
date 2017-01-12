@@ -127,17 +127,6 @@ public class SagittariusWriter implements Writer {
     }
 
     @Override
-    public void registerOwnerInfo(String user, List<String> hosts) {
-        Mapper<Owner> mapper = mappingManager.mapper(Owner.class);
-        BatchStatement batchStatement = new BatchStatement(BatchStatement.Type.UNLOGGED);
-        for (String host : hosts) {
-            Statement statement = mapper.saveQuery(new Owner(user, host), saveNullFields(false));
-            batchStatement.add(statement);
-        }
-        session.execute(batchStatement);
-    }
-
-    @Override
     public void insert(String host, String metric, long primaryTime, long secondaryTime, TimePartition timePartition, int value) {
         String timeSlice = TimeUtil.generateTimeSlice(primaryTime, timePartition);
         //secondaryTime use boxed type so it can be set to null and won't be store in cassandra.
