@@ -1,23 +1,22 @@
 package com.sagittarius.read;
 
-import com.datastax.driver.core.*;
+import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.Session;
+import com.datastax.driver.core.SimpleStatement;
+import com.datastax.driver.core.Statement;
 import com.datastax.driver.mapping.Mapper;
 import com.datastax.driver.mapping.MappingManager;
 import com.datastax.driver.mapping.Result;
 import com.sagittarius.bean.common.TimePartition;
 import com.sagittarius.bean.common.ValueType;
-import com.sagittarius.bean.query.*;
+import com.sagittarius.bean.query.Shift;
 import com.sagittarius.bean.result.*;
 import com.sagittarius.bean.table.*;
 import com.sagittarius.util.TimeUtil;
 
-import java.time.LocalDate;
-
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.*;
-
-import static java.time.temporal.ChronoField.ALIGNED_WEEK_OF_YEAR;
 
 
 public class SagittariusReader implements Reader {
@@ -69,6 +68,43 @@ public class SagittariusReader implements Reader {
             resultSets.add(set);
         }
         return resultSets;
+    }
+
+    @Override
+    public Map<ValueType, Map<String, Set<String>>> getDataType(List<String> hosts, List<String> metrics) {
+        Map<ValueType, Map<String, Set<String>>> dataTypeMap = new HashMap<>();
+        Mapper<HostMetric> mapper = mappingManager.mapper(HostMetric.class);
+        Result<HostMetric> hostMetrics = ReadHelper.getHostMetrics(session, mapper, hosts, metrics);
+
+        for (HostMetric hostMetric : hostMetrics) {
+            ValueType type = hostMetric.getValueType();
+            if (dataTypeMap.containsKey(type)) {
+                Map<String, Set<String>> setMap = dataTypeMap.get(type);
+                setMap.get("hosts").add(hostMetric.getHost());
+                setMap.get("metrics").add(hostMetric.getMetric());
+            } else {
+                Map<String, Set<String>> setMap = new HashMap<>();
+                Set<String> hostSet = new HashSet<>();
+                Set<String> metricSet = new HashSet<>();
+                hostSet.add(hostMetric.getHost());
+                metricSet.add(hostMetric.getMetric());
+                setMap.put("hosts", hostSet);
+                setMap.put("metrics", metricSet);
+                dataTypeMap.put(type, setMap);
+            }
+        }
+
+        return dataTypeMap;
+    }
+
+    @Override
+    public ValueType getDataType(String host, String metric) {
+        Mapper<HostMetric> mapper = mappingManager.mapper(HostMetric.class);
+        Statement statement = new SimpleStatement(String.format(QueryStatement.HOST_METRIC_QUERY_STATEMENT, host, metric));
+        ResultSet rs = session.execute(statement);
+        HostMetric hostMetric = mapper.map(rs).one();
+        return hostMetric.getValueType();
+
     }
 
     @Override
@@ -252,11 +288,11 @@ public class SagittariusReader implements Reader {
         if (shift == Shift.NEAREST) {
             statement = new SimpleStatement(String.format(QueryStatement.POINT_BEFORE_SHIFT_QUERY_STATEMENT, table, host, metric, timeSlice, time));
             ResultSet setBefore = session.execute(statement);
-            if(!setBefore.isExhausted())
+            if (!setBefore.isExhausted())
                 resultSets.add(setBefore);
             statement = new SimpleStatement(String.format(QueryStatement.POINT_AFTER_SHIFT_QUERY_STATEMENT, table, host, metric, timeSlice, time));
             ResultSet setAfter = session.execute(statement);
-            if(!setAfter.isExhausted())
+            if (!setAfter.isExhausted())
                 resultSets.add(setAfter);
             return resultSets;
         }
@@ -653,15 +689,15 @@ public class SagittariusReader implements Reader {
             boolean ifRepeat = true;
             switch (timePartition) {
                 case DAY:
-                    if(last.getDayOfYear()!=end.getDayOfYear())
-                        ifRepeat=false;
+                    if (last.getDayOfYear() != end.getDayOfYear())
+                        ifRepeat = false;
                     break;
                 case WEEK:
                     if (last.getDayOfWeek().compareTo(end.getDayOfWeek()) <= 0)
                         ifRepeat = false;
                     break;
                 case MONTH:
-                    if (last.getMonthValue()!= end.getMonthValue())
+                    if (last.getMonthValue() != end.getMonthValue())
                         ifRepeat = false;
                     break;
                 case YEAR:

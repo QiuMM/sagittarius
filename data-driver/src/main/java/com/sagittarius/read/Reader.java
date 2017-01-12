@@ -1,13 +1,30 @@
 package com.sagittarius.read;
 
 
+import com.sagittarius.bean.common.ValueType;
 import com.sagittarius.bean.query.*;
 import com.sagittarius.bean.result.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public interface Reader {
+    /**
+     * given hosts list and metrics list,each host is associated with the same list of metrics , get map of valueType.
+     * @param hosts lists of hosts
+     * @param metrics lists of metrics
+     * @return map of valueType, the key is valueType, the value is a map containing list of hosts and list of metrics which are of this valueType
+     */
+    Map<ValueType, Map<String, Set<String>>> getDataType(List<String> hosts, List<String> metrics);
+    /**
+     * given host and metric, get the corresponding valueType.
+     * @param host host
+     * @param metric metric
+     * @return valueType corresponding to that specified metric
+     */
+    ValueType getDataType(String host, String metric);
+
     /**
      * given hosts list and metrics list,each host is associated with the same list of metrics , get IntPoints at the query time.
      * @param hosts lists of hosts
