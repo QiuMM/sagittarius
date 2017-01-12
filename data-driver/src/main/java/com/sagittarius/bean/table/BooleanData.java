@@ -7,9 +7,7 @@ import com.datastax.driver.mapping.annotations.Table;
  * class map to cassandra table data_boolean
  */
 
-@Table(name = "data_boolean",
-        readConsistency = "QUORUM",
-        writeConsistency = "QUORUM")
+@Table(name = "data_boolean")
 public class BooleanData extends AbstractData {
     private boolean value;
 

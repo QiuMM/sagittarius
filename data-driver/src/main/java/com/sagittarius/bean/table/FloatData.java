@@ -7,9 +7,7 @@ import com.datastax.driver.mapping.annotations.Table;
  * class map to cassandra table data_float
  */
 
-@Table(name = "data_float",
-        readConsistency = "QUORUM",
-        writeConsistency = "QUORUM")
+@Table(name = "data_float")
 public class FloatData extends AbstractData {
     private float value;
 

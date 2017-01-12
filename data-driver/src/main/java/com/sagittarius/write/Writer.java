@@ -8,25 +8,20 @@ import java.util.Map;
 
 public interface Writer {
     /**
-     * register host and it's metrics.
+     * register host and it's metrics(metric metadata).you can register metrics to a host at any time when you need to,
+     * new metrics will be add to this host, duplicate metrics(metric metadata with the same metric field) will overwrite previous.
      * @param host the host name(or id)
      * @param metricMetadatas metrics info which belong to this host
      */
     void registerHostMetricInfo(String host, List<MetricMetadata> metricMetadatas);
 
     /**
-     * register tags to a host.
+     * register tags to a host. you can register tags to a host at any time when you need to,
+     * new tags will be added to this host, duplicate tags will overwrite previous.
      * @param host the host name(or id)
      * @param tags a collection of tag_name:tag_value pairs
      */
     void registerHostTags(String host, Map<String, String> tags);
-
-    /**
-     * register user and it's hosts, state the ownership between users and hosts.
-     * @param user the user name(or id)
-     * @param hosts hosts belong to this user
-     */
-    void registerOwnerInfo(String user, List<String> hosts);
 
     /**
      * insert a metric data point info whose metric value type is INT.

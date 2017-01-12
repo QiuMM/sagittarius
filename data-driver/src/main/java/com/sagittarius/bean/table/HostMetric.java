@@ -10,9 +10,7 @@ import com.sagittarius.bean.common.ValueType;
 /**
  * class map to cassandra table host_metric
  */
-@Table(name = "host_metric",
-        readConsistency = "QUORUM",
-        writeConsistency = "QUORUM")
+@Table(name = "host_metric")
 public class HostMetric {
     private String host;
     private String metric;

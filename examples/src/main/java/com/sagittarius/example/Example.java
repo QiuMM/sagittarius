@@ -216,16 +216,6 @@ public class Example {
         }
     }
 
-    private static void registerOwnerInfo(Writer writer) {
-        List<String> hosts = new ArrayList<>();
-        for (int i = 0; i < 50; ++i) {
-            hosts.add("12828" + i);
-        }
-        for (String host : hosts) {
-            writer.registerOwnerInfo("Qiu Mingming", hosts);
-        }
-    }
-
     private static void registerHostTags(Writer writer) {
         Map<String, String> tags = new HashMap<>();
         tags.put("price", "¥.10000");

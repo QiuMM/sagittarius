@@ -7,9 +7,7 @@ import com.datastax.driver.mapping.annotations.Table;
  * class map to cassandra table data_double
  */
 
-@Table(name = "data_double",
-        readConsistency = "LOCAL_ONE",
-        writeConsistency = "LOCAL_ONE")
+@Table(name = "data_double")
 public class DoubleData extends AbstractData {
     private double value;
 

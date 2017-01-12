@@ -32,6 +32,10 @@ public class SagittariusClient {
         return session;
     }
 
+    public MappingManager getMappingManager() {
+        return mappingManager;
+    }
+
     public Writer getWriter() {
         return new SagittariusWriter(session, mappingManager);
     }

@@ -7,9 +7,7 @@ import com.datastax.driver.mapping.annotations.Table;
  * class map to cassandra table data_int
  */
 
-@Table(name = "data_int",
-        readConsistency = "QUORUM",
-        writeConsistency = "QUORUM")
+@Table(name = "data_int")
 public class IntData extends AbstractData {
     private int value;
 

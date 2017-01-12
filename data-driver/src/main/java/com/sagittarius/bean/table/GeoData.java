@@ -7,9 +7,7 @@ import com.datastax.driver.mapping.annotations.Table;
  * class map to cassandra table data_geo
  */
 
-@Table(name = "data_geo",
-        readConsistency = "QUORUM",
-        writeConsistency = "QUORUM")
+@Table(name = "data_geo")
 public class GeoData extends AbstractData {
     private float latitude;
     private float longitude;
