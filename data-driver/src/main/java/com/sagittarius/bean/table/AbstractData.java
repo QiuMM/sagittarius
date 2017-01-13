@@ -69,12 +69,18 @@ public abstract class AbstractData {
 
     @Column(name = "secondary_time")
     public Long getSecondaryTime() {
-        if(secondaryTime==null)
-            return new Long(-1);
         return secondaryTime;
     }
 
     public void setSecondaryTime(Long secondaryTime) {
         this.secondaryTime = secondaryTime;
     }
+
+
+    public long secondaryTimeUnboxed(){
+        if(secondaryTime==null)
+            return -1;
+        return secondaryTime;
+    }
+
 }
