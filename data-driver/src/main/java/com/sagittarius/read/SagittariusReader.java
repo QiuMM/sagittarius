@@ -120,10 +120,10 @@ public class SagittariusReader implements Reader {
         for (IntData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.get(host).add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
             } else {
                 List<IntPoint> points = new ArrayList<>();
-                points.add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                points.add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -144,10 +144,10 @@ public class SagittariusReader implements Reader {
         for (LongData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.get(host).add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
             } else {
                 List<LongPoint> points = new ArrayList<>();
-                points.add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                points.add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -168,10 +168,10 @@ public class SagittariusReader implements Reader {
         for (FloatData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.get(host).add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
             } else {
                 List<FloatPoint> points = new ArrayList<>();
-                points.add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                points.add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -192,10 +192,10 @@ public class SagittariusReader implements Reader {
         for (DoubleData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.get(host).add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
             } else {
                 List<DoublePoint> points = new ArrayList<>();
-                points.add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                points.add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -216,10 +216,10 @@ public class SagittariusReader implements Reader {
         for (BooleanData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.get(host).add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
             } else {
                 List<BooleanPoint> points = new ArrayList<>();
-                points.add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                points.add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -240,10 +240,10 @@ public class SagittariusReader implements Reader {
         for (StringData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.get(host).add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
             } else {
                 List<StringPoint> points = new ArrayList<>();
-                points.add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                points.add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -264,10 +264,10 @@ public class SagittariusReader implements Reader {
         for (GeoData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getLatitude(), data.getLongitude()));
+                result.get(host).add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
             } else {
                 List<GeoPoint> points = new ArrayList<>();
-                points.add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getLatitude(), data.getLongitude()));
+                points.add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
                 result.put(host, points);
             }
         }
@@ -321,14 +321,14 @@ public class SagittariusReader implements Reader {
         Mapper<IntData> mapper = mappingManager.mapper(IntData.class);
         if (resultSets.size() == 1) {
             IntData data = mapper.map(resultSets.get(0)).one();
-            return new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue());
+            return new IntPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue());
         } else {
             IntData dataBefore = mapper.map(resultSets.get(0)).one();
             IntData dataAfter = mapper.map(resultSets.get(1)).one();
             if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
-                return new IntPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.getSecondaryTime(), dataAfter.getValue());
+                return new IntPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.secondaryTimeUnboxed(), dataAfter.getValue());
             else
-                return new IntPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.getSecondaryTime(), dataBefore.getValue());
+                return new IntPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.secondaryTimeUnboxed(), dataBefore.getValue());
         }
     }
 
@@ -338,14 +338,14 @@ public class SagittariusReader implements Reader {
         Mapper<LongData> mapper = mappingManager.mapper(LongData.class);
         if (resultSets.size() == 1) {
             LongData data = mapper.map(resultSets.get(0)).one();
-            return new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue());
+            return new LongPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue());
         } else {
             LongData dataBefore = mapper.map(resultSets.get(0)).one();
             LongData dataAfter = mapper.map(resultSets.get(1)).one();
             if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
-                return new LongPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.getSecondaryTime(), dataAfter.getValue());
+                return new LongPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.secondaryTimeUnboxed(), dataAfter.getValue());
             else
-                return new LongPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.getSecondaryTime(), dataBefore.getValue());
+                return new LongPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.secondaryTimeUnboxed(), dataBefore.getValue());
         }
     }
 
@@ -355,14 +355,14 @@ public class SagittariusReader implements Reader {
         Mapper<FloatData> mapper = mappingManager.mapper(FloatData.class);
         if (resultSets.size() == 1) {
             FloatData data = mapper.map(resultSets.get(0)).one();
-            return new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue());
+            return new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue());
         } else {
             FloatData dataBefore = mapper.map(resultSets.get(0)).one();
             FloatData dataAfter = mapper.map(resultSets.get(1)).one();
             if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
-                return new FloatPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.getSecondaryTime(), dataAfter.getValue());
+                return new FloatPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.secondaryTimeUnboxed(), dataAfter.getValue());
             else
-                return new FloatPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.getSecondaryTime(), dataBefore.getValue());
+                return new FloatPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.secondaryTimeUnboxed(), dataBefore.getValue());
         }
     }
 
@@ -372,14 +372,14 @@ public class SagittariusReader implements Reader {
         Mapper<DoubleData> mapper = mappingManager.mapper(DoubleData.class);
         if (resultSets.size() == 1) {
             DoubleData data = mapper.map(resultSets.get(0)).one();
-            return new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue());
+            return new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue());
         } else {
             DoubleData dataBefore = mapper.map(resultSets.get(0)).one();
             DoubleData dataAfter = mapper.map(resultSets.get(1)).one();
             if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
-                return new DoublePoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.getSecondaryTime(), dataAfter.getValue());
+                return new DoublePoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.secondaryTimeUnboxed(), dataAfter.getValue());
             else
-                return new DoublePoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.getSecondaryTime(), dataBefore.getValue());
+                return new DoublePoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.secondaryTimeUnboxed(), dataBefore.getValue());
         }
     }
 
@@ -389,14 +389,14 @@ public class SagittariusReader implements Reader {
         Mapper<BooleanData> mapper = mappingManager.mapper(BooleanData.class);
         if (resultSets.size() == 1) {
             BooleanData data = mapper.map(resultSets.get(0)).one();
-            return new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue());
+            return new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue());
         } else {
             BooleanData dataBefore = mapper.map(resultSets.get(0)).one();
             BooleanData dataAfter = mapper.map(resultSets.get(1)).one();
             if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
-                return new BooleanPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.getSecondaryTime(), dataAfter.getValue());
+                return new BooleanPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.secondaryTimeUnboxed(), dataAfter.getValue());
             else
-                return new BooleanPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.getSecondaryTime(), dataBefore.getValue());
+                return new BooleanPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.secondaryTimeUnboxed(), dataBefore.getValue());
         }
     }
 
@@ -406,14 +406,14 @@ public class SagittariusReader implements Reader {
         Mapper<StringData> mapper = mappingManager.mapper(StringData.class);
         if (resultSets.size() == 1) {
             StringData data = mapper.map(resultSets.get(0)).one();
-            return new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue());
+            return new StringPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue());
         } else {
             StringData dataBefore = mapper.map(resultSets.get(0)).one();
             StringData dataAfter = mapper.map(resultSets.get(1)).one();
             if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
-                return new StringPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.getSecondaryTime(), dataAfter.getValue());
+                return new StringPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.secondaryTimeUnboxed(), dataAfter.getValue());
             else
-                return new StringPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.getSecondaryTime(), dataBefore.getValue());
+                return new StringPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.secondaryTimeUnboxed(), dataBefore.getValue());
         }
     }
 
@@ -423,14 +423,14 @@ public class SagittariusReader implements Reader {
         Mapper<GeoData> mapper = mappingManager.mapper(GeoData.class);
         if (resultSets.size() == 1) {
             GeoData data = mapper.map(resultSets.get(0)).one();
-            return new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getLatitude(), data.getLongitude());
+            return new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude());
         } else {
             GeoData dataBefore = mapper.map(resultSets.get(0)).one();
             GeoData dataAfter = mapper.map(resultSets.get(1)).one();
             if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
-                return new GeoPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.getSecondaryTime(), dataAfter.getLatitude(), dataAfter.getLongitude());
+                return new GeoPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.secondaryTimeUnboxed(), dataAfter.getLatitude(), dataAfter.getLongitude());
             else
-                return new GeoPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.getSecondaryTime(), dataBefore.getLatitude(), dataBefore.getLongitude());
+                return new GeoPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.secondaryTimeUnboxed(), dataBefore.getLatitude(), dataBefore.getLongitude());
         }
     }
 
@@ -465,10 +465,10 @@ public class SagittariusReader implements Reader {
             rs = getPointResultSet(host, metric, timeSlice, ValueType.INT);
             IntData data = mapperInt.map(rs).one();
             if (result.containsKey(host)) {
-                result.get(host).add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.get(host).add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
             } else {
                 List<IntPoint> points = new ArrayList<>();
-                points.add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                points.add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -490,10 +490,10 @@ public class SagittariusReader implements Reader {
             rs = getPointResultSet(host, metric, timeSlice, ValueType.LONG);
             LongData data = mapperInt.map(rs).one();
             if (result.containsKey(host)) {
-                result.get(host).add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.get(host).add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
             } else {
                 List<LongPoint> points = new ArrayList<>();
-                points.add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                points.add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -515,10 +515,10 @@ public class SagittariusReader implements Reader {
             rs = getPointResultSet(host, metric, timeSlice, ValueType.FLOAT);
             FloatData data = mapperInt.map(rs).one();
             if (result.containsKey(host)) {
-                result.get(host).add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.get(host).add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
             } else {
                 List<FloatPoint> points = new ArrayList<>();
-                points.add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                points.add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -541,10 +541,10 @@ public class SagittariusReader implements Reader {
             DoubleData data = mapperInt.map(rs).one();
 
             if (result.containsKey(host)) {
-                result.get(host).add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.get(host).add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
             } else {
                 List<DoublePoint> points = new ArrayList<>();
-                points.add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                points.add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -566,10 +566,10 @@ public class SagittariusReader implements Reader {
             rs = getPointResultSet(host, metric, timeSlice, ValueType.BOOLEAN);
             BooleanData data = mapperInt.map(rs).one();
             if (result.containsKey(host)) {
-                result.get(host).add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.get(host).add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
             } else {
                 List<BooleanPoint> points = new ArrayList<>();
-                points.add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                points.add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -591,10 +591,10 @@ public class SagittariusReader implements Reader {
             rs = getPointResultSet(host, metric, timeSlice, ValueType.STRING);
             StringData data = mapperInt.map(rs).one();
             if (result.containsKey(host)) {
-                result.get(host).add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.get(host).add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
             } else {
                 List<StringPoint> points = new ArrayList<>();
-                points.add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                points.add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -616,10 +616,10 @@ public class SagittariusReader implements Reader {
             rs = getPointResultSet(host, metric, timeSlice, ValueType.GEO);
             GeoData data = mapperInt.map(rs).one();
             if (result.containsKey(host)) {
-                result.get(host).add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getLatitude(), data.getLongitude()));
+                result.get(host).add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
             } else {
                 List<GeoPoint> points = new ArrayList<>();
-                points.add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getLatitude(), data.getLongitude()));
+                points.add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
                 result.put(host, points);
             }
         }
@@ -653,10 +653,10 @@ public class SagittariusReader implements Reader {
             }
 
             String endTimeSlice = TimeUtil.generateTimeSlice(endTime, timePartition);
-            if (startTimeSlice.equals(endTimeSlice)) { //同一天
+            if (startTimeSlice.equals(endTimeSlice)) {
                 String query = String.format(QueryStatement.IN_PARTITION_QUERY_STATEMENT, table, hostsString, metricsString, startTimeSlice, startTime, endTime);
                 querys.add(query);
-                return querys;
+                continue;
             }
             LocalDateTime start = LocalDateTime.ofEpochSecond(startTimeSecond, 0, ZoneOffset.UTC);
             LocalDateTime end = LocalDateTime.ofEpochSecond(endTimeSecond, 0, ZoneOffset.UTC);
@@ -734,10 +734,10 @@ public class SagittariusReader implements Reader {
         for (IntData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.get(host).add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
             } else {
                 List<IntPoint> points = new ArrayList<>();
-                points.add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                points.add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -759,10 +759,10 @@ public class SagittariusReader implements Reader {
         for (LongData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.get(host).add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
             } else {
                 List<LongPoint> points = new ArrayList<>();
-                points.add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                points.add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -784,10 +784,10 @@ public class SagittariusReader implements Reader {
         for (FloatData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.get(host).add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
             } else {
                 List<FloatPoint> points = new ArrayList<>();
-                points.add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                points.add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -809,10 +809,10 @@ public class SagittariusReader implements Reader {
         for (DoubleData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.get(host).add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
             } else {
                 List<DoublePoint> points = new ArrayList<>();
-                points.add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                points.add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -834,10 +834,10 @@ public class SagittariusReader implements Reader {
         for (BooleanData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.get(host).add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
             } else {
                 List<BooleanPoint> points = new ArrayList<>();
-                points.add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                points.add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -859,10 +859,10 @@ public class SagittariusReader implements Reader {
         for (StringData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                result.get(host).add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
             } else {
                 List<StringPoint> points = new ArrayList<>();
-                points.add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getValue()));
+                points.add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                 result.put(host, points);
             }
         }
@@ -884,10 +884,10 @@ public class SagittariusReader implements Reader {
         for (GeoData data : datas) {
             String host = data.getHost();
             if (result.containsKey(host)) {
-                result.get(host).add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getLatitude(), data.getLongitude()));
+                result.get(host).add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
             } else {
                 List<GeoPoint> points = new ArrayList<>();
-                points.add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.getSecondaryTime(), data.getLatitude(), data.getLongitude()));
+                points.add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
                 result.put(host, points);
             }
         }
