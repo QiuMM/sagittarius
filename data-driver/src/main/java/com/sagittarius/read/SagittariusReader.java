@@ -653,10 +653,10 @@ public class SagittariusReader implements Reader {
             }
 
             String endTimeSlice = TimeUtil.generateTimeSlice(endTime, timePartition);
-            if (startTimeSlice.equals(endTimeSlice)) { //同一天
+            if (startTimeSlice.equals(endTimeSlice)) {
                 String query = String.format(QueryStatement.IN_PARTITION_QUERY_STATEMENT, table, hostsString, metricsString, startTimeSlice, startTime, endTime);
                 querys.add(query);
-                return querys;
+                continue;
             }
             LocalDateTime start = LocalDateTime.ofEpochSecond(startTimeSecond, 0, ZoneOffset.UTC);
             LocalDateTime end = LocalDateTime.ofEpochSecond(endTimeSecond, 0, ZoneOffset.UTC);
