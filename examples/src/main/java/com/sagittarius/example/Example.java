@@ -9,6 +9,7 @@ import com.sagittarius.bean.result.DoublePoint;
 import com.sagittarius.core.SagittariusClient;
 import com.sagittarius.read.Reader;
 import com.sagittarius.write.Writer;
+import org.apache.spark.SparkConf;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -26,7 +27,7 @@ public class Example {
     public static void main(String[] args) {
         CassandraConnection connection = CassandraConnection.getInstance();
         Cluster cluster = connection.getCluster();
-        SagittariusClient client = new SagittariusClient(cluster);
+        SagittariusClient client = new SagittariusClient(cluster, new SparkConf());
         Writer writer = client.getWriter();
         Reader reader = client.getReader();
         //registerHostMetricInfo(writer);

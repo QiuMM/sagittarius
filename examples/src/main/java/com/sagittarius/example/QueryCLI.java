@@ -6,6 +6,7 @@ import com.sagittarius.bean.result.*;
 import com.sagittarius.core.SagittariusClient;
 import com.sagittarius.read.Reader;
 import org.apache.commons.cli.*;
+import org.apache.spark.SparkConf;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -23,7 +24,7 @@ public class QueryCLI {
         Scanner sc = new Scanner(System.in);
         CassandraConnection connection = CassandraConnection.getInstance();
         Cluster cluster = connection.getCluster();
-        SagittariusClient client = new SagittariusClient(cluster);
+        SagittariusClient client = new SagittariusClient(cluster, new SparkConf());
         Reader reader = client.getReader();
         System.out.println("-------------------------------------------------------------\nWelcome to");
         String logo = "            __ __ __  ____  __ ______     \n" +

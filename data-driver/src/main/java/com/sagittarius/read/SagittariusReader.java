@@ -1058,7 +1058,7 @@ public class SagittariusReader implements Reader {
     @Override
     public Map<String, Map<String, List<BooleanPoint>>> getBooleanRange(List<String> hosts, List<String> metrics, long startTime, long endTime, BooleanFilter filter) {
         JavaRDD<BooleanData> rangeQueryRDD = getRangeQueryRDD(hosts, metrics, startTime, endTime, ValueType.BOOLEAN);
-        JavaRDD<BooleanData> resultRDD = rangeQueryRDD.filter(booleanData -> booleanData.getValue() == filter.getEq());
+        JavaRDD<BooleanData> resultRDD = rangeQueryRDD.filter(data -> Boolean.valueOf(data.getValue() == filter.getEq()));
         List<BooleanData> datas = resultRDD.collect();
 
         Map<String, Map<String, List<BooleanPoint>>> result = new HashMap<>();
@@ -1120,7 +1120,7 @@ public class SagittariusReader implements Reader {
     public Map<String, Map<String, Double>> getBooleanRange(List<String> hosts, List<String> metrics, long startTime, long endTime, BooleanFilter filter, AggregationType aggregationType) {
         JavaRDD<BooleanData> rangeQueryRDD = getRangeQueryRDD(hosts, metrics, startTime, endTime, ValueType.BOOLEAN);
         //count aggregation
-        Map<HostMetricPair, Double> datas = rangeQueryRDD.filter(data -> data.getValue() == filter.getEq())
+        Map<HostMetricPair, Double> datas = rangeQueryRDD.filter(data -> Boolean.valueOf(data.getValue() == filter.getEq()))
                 .mapToPair(e -> new Tuple2<HostMetricPair, Double>(new HostMetricPair(e.getHost(), e.getMetric()), 1d))
                 .reduceByKey((e1, e2) -> e1 + e2)
                 .collectAsMap();

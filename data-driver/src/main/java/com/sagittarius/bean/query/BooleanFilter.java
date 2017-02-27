@@ -1,13 +1,13 @@
 package com.sagittarius.bean.query;
 
 public class BooleanFilter {
-    private Boolean eq;
+    private boolean eq;
 
-    public Boolean getEq() {
+    public boolean getEq() {
         return eq;
     }
 
-    public BooleanFilter setEq(Boolean eq) {
+    public BooleanFilter setEq(boolean eq) {
         this.eq = eq;
         return this;
     }

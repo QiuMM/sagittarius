@@ -14,6 +14,7 @@ import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.spark.SparkConf;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -224,7 +225,7 @@ public class WriteTest {
     public static void main(String[] args) {
         CassandraConnection connection = CassandraConnection.getInstance();
         Cluster cluster = connection.getCluster();
-        SagittariusClient client = new SagittariusClient(cluster);
+        SagittariusClient client = new SagittariusClient(cluster, new SparkConf());
         Writer writer = client.getWriter();
         new WriteTest(args[0], Integer.parseInt(args[1])).test(writer, Integer.parseInt(args[2]));
         //new WriteTest("./examples/data/201606/", 1000).test(writer, 15);
