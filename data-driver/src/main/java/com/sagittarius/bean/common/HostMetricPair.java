@@ -11,6 +11,14 @@ public class HostMetricPair {
         this.hashCode = generateHash();
     }
 
+    public String getHost() {
+        return host;
+    }
+
+    public String getMetric() {
+        return metric;
+    }
+
     @Override
     public boolean equals(Object obj) {
         if (this == obj) {

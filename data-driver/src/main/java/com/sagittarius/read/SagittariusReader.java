@@ -7,25 +7,37 @@ import com.datastax.driver.core.Statement;
 import com.datastax.driver.mapping.Mapper;
 import com.datastax.driver.mapping.MappingManager;
 import com.datastax.driver.mapping.Result;
+import com.sagittarius.bean.common.HostMetricPair;
 import com.sagittarius.bean.common.TimePartition;
 import com.sagittarius.bean.common.ValueType;
-import com.sagittarius.bean.query.Shift;
+import com.sagittarius.bean.query.*;
 import com.sagittarius.bean.result.*;
 import com.sagittarius.bean.table.*;
 import com.sagittarius.util.TimeUtil;
+import org.apache.spark.api.java.JavaPairRDD;
+import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.api.java.function.Function;
+import scala.Tuple2;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.*;
 
+import static com.datastax.spark.connector.japi.CassandraJavaUtil.column;
+import static com.datastax.spark.connector.japi.CassandraJavaUtil.javaFunctions;
+import static com.datastax.spark.connector.japi.CassandraJavaUtil.mapRowTo;
+
 
 public class SagittariusReader implements Reader {
     private MappingManager mappingManager;
     private Session session;
+    private JavaSparkContext sparkContext;
 
-    public SagittariusReader(Session session, MappingManager mappingManager) {
+    public SagittariusReader(Session session, MappingManager mappingManager, JavaSparkContext sparkContext) {
         this.session = session;
         this.mappingManager = mappingManager;
+        this.sparkContext = sparkContext;
     }
 
     private String getTableByType(ValueType valueType) {
@@ -631,13 +643,13 @@ public class SagittariusReader implements Reader {
         String table = getTableByType(valueType);
         Mapper<HostMetric> mapper = mappingManager.mapper(HostMetric.class);
         Result<HostMetric> hostMetrics = ReadHelper.getHostMetrics(session, mapper, hosts, metrics);
-        Map<String, Map<String, Set<String>>> TimeSliceHostMetric = ReadHelper.getTimeSlicePartedHostMetrics(hostMetrics, startTime);
+        Map<String, Map<String, Set<String>>> timeSliceHostMetric = ReadHelper.getTimeSlicePartedHostMetrics(hostMetrics, startTime);
         List<String> querys = new ArrayList<>();
         long startTimeSecond = startTime / 1000;
         long endTimeSecond = endTime / 1000;
 
 
-        for (Map.Entry<String, Map<String, Set<String>>> entry : TimeSliceHostMetric.entrySet()) {
+        for (Map.Entry<String, Map<String, Set<String>>> entry : timeSliceHostMetric.entrySet()) {
             String startTimeSlice = entry.getKey();
             String hostsString = ReadHelper.generateInStatement(entry.getValue().get("hosts"));
             String metricsString = ReadHelper.generateInStatement(entry.getValue().get("metrics"));
@@ -658,6 +670,7 @@ public class SagittariusReader implements Reader {
                 querys.add(query);
                 continue;
             }
+
             LocalDateTime start = LocalDateTime.ofEpochSecond(startTimeSecond, 0, ZoneOffset.UTC);
             LocalDateTime end = LocalDateTime.ofEpochSecond(endTimeSecond, 0, ZoneOffset.UTC);
             List<LocalDateTime> totalDates = new ArrayList<>();
@@ -893,5 +906,248 @@ public class SagittariusReader implements Reader {
         }
 
         return result;
+    }
+
+    private Class getClassByType(ValueType valueType) {
+        Class klass = null;
+        switch (valueType) {
+            case INT:
+                klass = IntData.class;
+                break;
+            case LONG:
+                klass = LongData.class;
+                break;
+            case FLOAT:
+                klass = FloatData.class;
+                break;
+            case DOUBLE:
+                klass = DoubleData.class;
+                break;
+            case BOOLEAN:
+                klass = BooleanData.class;
+                break;
+            case STRING:
+                klass = StringData.class;
+                break;
+            case GEO:
+                klass = GeoData.class;
+                break;
+        }
+        return klass;
+    }
+
+    private <T extends AbstractData> JavaRDD<T> getRangeQueryRDD(List<String> hosts, List<String> metrics, long startTime, long endTime, ValueType valueType) {
+        //spark driver query metadata
+        Mapper<HostMetric> mapper = mappingManager.mapper(HostMetric.class);
+        Result<HostMetric> hostMetrics = ReadHelper.getHostMetrics(session, mapper, hosts, metrics);
+        Map<String, Map<String, Set<String>>> timeSliceHostMetric = ReadHelper.getTimeSlicePartedHostMetrics(hostMetrics, startTime);
+
+        List<JavaRDD<T>> rdds = new ArrayList<>();
+        String table = getTableByType(valueType);
+        Class klass = getClassByType(valueType);
+        long startTimeSecond = startTime / 1000;
+        long endTimeSecond = endTime / 1000;
+
+        for (Map.Entry<String, Map<String, Set<String>>> entry : timeSliceHostMetric.entrySet()) {
+            String startTimeSlice = entry.getKey();
+            String hostsString = ReadHelper.generateInStatement(entry.getValue().get("hosts"));
+            String metricsString = ReadHelper.generateInStatement(entry.getValue().get("metrics"));
+            TimePartition timePartition;
+            if (startTimeSlice.contains("D")) {
+                timePartition = TimePartition.DAY;
+            } else if (startTimeSlice.contains("W")) {
+                timePartition = TimePartition.WEEK;
+            } else if (startTimeSlice.contains("M")) {
+                timePartition = TimePartition.MONTH;
+            } else {
+                timePartition = TimePartition.YEAR;
+            }
+
+            String endTimeSlice = TimeUtil.generateTimeSlice(endTime, timePartition);
+            if (startTimeSlice.equals(endTimeSlice)) {
+                String whereStr = String.format(QueryStatement.IN_PARTITION_WHERE_STATEMENT, hostsString, metricsString, startTimeSlice, startTime, endTime);
+                JavaRDD<T> rdd = (JavaRDD<T>) javaFunctions(sparkContext).cassandraTable("sagittarius", table, mapRowTo(klass)).where(whereStr);
+                rdds.add(rdd);
+                continue;
+            }
+
+            LocalDateTime start = LocalDateTime.ofEpochSecond(startTimeSecond, 0, ZoneOffset.UTC);
+            LocalDateTime end = LocalDateTime.ofEpochSecond(endTimeSecond, 0, ZoneOffset.UTC);
+            List<LocalDateTime> totalDates = new ArrayList<>();
+            while (!start.isAfter(end)) {
+                totalDates.add(start);
+                switch (timePartition) {
+                    case DAY:
+                        start = start.plusDays(1);
+                        break;
+                    case WEEK:
+                        start = start.plusWeeks(1);
+                        break;
+                    case MONTH:
+                        start = start.plusMonths(1);
+                        break;
+                    case YEAR:
+                        start = start.plusYears(1);
+                        break;
+                }
+            }
+
+            String startWhereStr = String.format(QueryStatement.PARTIAL_PARTITION_WHERE_STATEMENT, hostsString, metricsString, startTimeSlice, ">=", startTime);
+            JavaRDD<T> startRDD = (JavaRDD<T>)javaFunctions(sparkContext).cassandraTable("sagittarius", table, mapRowTo(klass)).where(startWhereStr);
+            rdds.add(startRDD);
+
+            for (int i = 1; i < totalDates.size() - 1; ++i) {
+                //the last datetime may be in the same timepartition with the end datetime, so it should be processed separately.
+                String whereStr = String.format(QueryStatement.WHOLE_PARTITION_WHERE_STATEMENT, hostsString, metricsString, TimeUtil.generateTimeSlice(totalDates.get(i).toEpochSecond(ZoneOffset.UTC) * 1000, timePartition));
+                JavaRDD<T> rdd = (JavaRDD<T>) javaFunctions(sparkContext).cassandraTable("sagittarius", table, mapRowTo(klass)).where(whereStr);
+                rdds.add(rdd);
+            }
+            LocalDateTime last = totalDates.get(totalDates.size() - 1);
+            boolean ifRepeat = true;
+            switch (timePartition) {
+                case DAY:
+                    if (last.getDayOfYear() != end.getDayOfYear())
+                        ifRepeat = false;
+                    break;
+                case WEEK:
+                    if (last.getDayOfWeek().compareTo(end.getDayOfWeek()) <= 0)
+                        ifRepeat = false;
+                    break;
+                case MONTH:
+                    if (last.getMonthValue() != end.getMonthValue())
+                        ifRepeat = false;
+                    break;
+                case YEAR:
+                    if (last.getYear() != end.getYear())
+                        ifRepeat = false;
+                    break;
+            }
+            if (!ifRepeat) {
+                String whereStr = String.format(QueryStatement.WHOLE_PARTITION_WHERE_STATEMENT, hostsString, metricsString, TimeUtil.generateTimeSlice(last.toEpochSecond(ZoneOffset.UTC) * 1000, timePartition));
+                JavaRDD<T> rdd = (JavaRDD<T>) javaFunctions(sparkContext).cassandraTable("sagittarius", table, mapRowTo(klass)).where(whereStr);
+                rdds.add(rdd);
+            }
+            String endWhereStr = String.format(QueryStatement.PARTIAL_PARTITION_WHERE_STATEMENT, hostsString, metricsString, endTimeSlice, "<=", endTime);
+            JavaRDD<T> endRDD = (JavaRDD<T>) javaFunctions(sparkContext).cassandraTable("sagittarius", table, mapRowTo(klass)).where(endWhereStr);
+            rdds.add(endRDD);
+        }
+
+        return sparkContext.union(rdds.get(0), rdds.subList(1, rdds.size()));
+    }
+
+    @Override
+    public Map<String, Map<String, List<IntPoint>>> getIntRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter) {
+        return null;
+    }
+
+    @Override
+    public Map<String, Map<String, List<LongPoint>>> getLongRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter) {
+        return null;
+    }
+
+    @Override
+    public Map<String, Map<String, List<FloatPoint>>> getFloatRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter) {
+        return null;
+    }
+
+    @Override
+    public Map<String, Map<String, List<DoublePoint>>> getDoubleRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter) {
+        return null;
+    }
+
+    @Override
+    public Map<String, Map<String, List<BooleanPoint>>> getBooleanRange(List<String> hosts, List<String> metrics, long startTime, long endTime, BooleanFilter filter) {
+        JavaRDD<BooleanData> rangeQueryRDD = getRangeQueryRDD(hosts, metrics, startTime, endTime, ValueType.BOOLEAN);
+        JavaRDD<BooleanData> resultRDD = rangeQueryRDD.filter(booleanData -> booleanData.getValue() == filter.getEq());
+        List<BooleanData> datas = resultRDD.collect();
+
+        Map<String, Map<String, List<BooleanPoint>>> result = new HashMap<>();
+        for (BooleanData data : datas) {
+            String host = data.getHost();
+            String metric = data.getMetric();
+            if (result.containsKey(host)) {
+                Map<String, List<BooleanPoint>> map = result.get(host);
+                if (map.containsKey(metric)) {
+                    map.get(metric).add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                } else {
+                    List<BooleanPoint> points = new ArrayList<>();
+                    points.add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                    map.put(metric, points);
+                }
+            } else {
+                Map<String, List<BooleanPoint>> map = new HashMap<>();
+                List<BooleanPoint> points = new ArrayList<>();
+                points.add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                map.put(metric, points);
+                result.put(host, map);
+            }
+        }
+
+        return result;
+    }
+
+    @Override
+    public Map<String, Map<String, List<StringPoint>>> getStringRange(List<String> hosts, List<String> metrics, long startTime, long endTime, StringFilter filter) {
+        return null;
+    }
+
+    @Override
+    public Map<String, Map<String, List<GeoPoint>>> getGeoRange(List<String> hosts, List<String> metrics, long startTime, long endTime, GeoFilter filter) {
+        return null;
+    }
+
+    @Override
+    public Map<String, Map<String, Double>> getIntRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter, AggregationType aggregationType) {
+        return null;
+    }
+
+    @Override
+    public Map<String, Map<String, Double>> getLongRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter, AggregationType aggregationType) {
+        return null;
+    }
+
+    @Override
+    public Map<String, Map<String, Double>> getFloatRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter, AggregationType aggregationType) {
+        return null;
+    }
+
+    @Override
+    public Map<String, Map<String, Double>> getDoubleRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter, AggregationType aggregationType) {
+        return null;
+    }
+
+    @Override
+    public Map<String, Map<String, Double>> getBooleanRange(List<String> hosts, List<String> metrics, long startTime, long endTime, BooleanFilter filter, AggregationType aggregationType) {
+        JavaRDD<BooleanData> rangeQueryRDD = getRangeQueryRDD(hosts, metrics, startTime, endTime, ValueType.BOOLEAN);
+        //count aggregation
+        Map<HostMetricPair, Double> datas = rangeQueryRDD.filter(data -> data.getValue() == filter.getEq())
+                .mapToPair(e -> new Tuple2<HostMetricPair, Double>(new HostMetricPair(e.getHost(), e.getMetric()), 1d))
+                .reduceByKey((e1, e2) -> e1 + e2)
+                .collectAsMap();
+
+        Map<String, Map<String, Double>> result = new HashMap<>();
+        for (Map.Entry<HostMetricPair, Double> data : datas.entrySet()) {
+            String host = data.getKey().getHost();
+            String metric = data.getKey().getMetric();
+            if (result.containsKey(host)) {
+                result.get(host).put(metric, data.getValue());
+            } else {
+                Map<String, Double> map = new HashMap<>();
+                map.put(metric, data.getValue());
+                result.put(host, map);
+            }
+        }
+
+        return result;
+    }
+
+    @Override
+    public Map<String, Map<String, Double>> getStringRange(List<String> hosts, List<String> metrics, long startTime, long endTime, StringFilter filter, AggregationType aggregationType) {
+        return null;
+    }
+
+    @Override
+    public Map<String, Map<String, Double>> getGeoRange(List<String> hosts, List<String> metrics, long startTime, long endTime, GeoFilter filter, AggregationType aggregationType) {
+        return null;
     }
 }

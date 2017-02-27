@@ -11,6 +11,8 @@ import com.sagittarius.read.Reader;
 import com.sagittarius.read.SagittariusReader;
 import com.sagittarius.write.SagittariusWriter;
 import com.sagittarius.write.Writer;
+import org.apache.spark.SparkConf;
+import org.apache.spark.api.java.JavaSparkContext;
 
 /**
  * client which expose interfaces to user
@@ -18,14 +20,16 @@ import com.sagittarius.write.Writer;
 public class SagittariusClient {
     private Session session;
     private MappingManager mappingManager;
+    private JavaSparkContext sparkContext;
 
-    public SagittariusClient(Cluster cluster) {
+    public SagittariusClient(Cluster cluster, SparkConf sparkConf) {
         cluster.getConfiguration().getCodecRegistry()
                 .register(new EnumNameCodec<>(TimePartition.class))
                 .register(new EnumNameCodec<>(ValueType.class))
                 .register(new SimpleTimestampCodec());
         this.session = cluster.connect("sagittarius");
         this.mappingManager = new MappingManager(session);
+        this.sparkContext  = new JavaSparkContext(sparkConf);
     }
 
     public Session getSession() {
@@ -41,7 +45,7 @@ public class SagittariusClient {
     }
 
     public Reader getReader() {
-        return new SagittariusReader(session, mappingManager);
+        return new SagittariusReader(session, mappingManager, sparkContext);
     }
 
     public void close() {

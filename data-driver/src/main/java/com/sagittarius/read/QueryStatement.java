@@ -13,4 +13,7 @@ public class QueryStatement {
     static final String PARTIAL_PARTITION_QUERY_STATEMENT = "select * from %s where host in (%s) and metric in (%s) and time_slice='%s' and primary_time%s%d";
     static final String IN_PARTITION_QUERY_STATEMENT = "select * from %s where host in (%s) and metric in (%s) and time_slice='%s' and primary_time>=%d and primary_time<=%d";
 
+    static final String WHOLE_PARTITION_WHERE_STATEMENT = "host in (%s) and metric in (%s) and time_slice='%s'";
+    static final String PARTIAL_PARTITION_WHERE_STATEMENT = "host in (%s) and metric in (%s) and time_slice='%s' and primary_time%s%d";
+    static final String IN_PARTITION_WHERE_STATEMENT = "host in (%s) and metric in (%s) and time_slice='%s' and primary_time>=%d and primary_time<=%d";
 }
