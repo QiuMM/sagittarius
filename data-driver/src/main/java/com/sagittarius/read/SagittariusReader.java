@@ -7,6 +7,7 @@ import com.datastax.driver.core.Statement;
 import com.datastax.driver.mapping.Mapper;
 import com.datastax.driver.mapping.MappingManager;
 import com.datastax.driver.mapping.Result;
+import com.datastax.spark.connector.util.CqlWhereParser;
 import com.sagittarius.bean.common.HostMetricPair;
 import com.sagittarius.bean.common.TimePartition;
 import com.sagittarius.bean.common.ValueType;
@@ -14,10 +15,19 @@ import com.sagittarius.bean.query.*;
 import com.sagittarius.bean.result.*;
 import com.sagittarius.bean.table.*;
 import com.sagittarius.util.TimeUtil;
+import org.apache.hadoop.io.retry.RetryPolicies;
+import org.apache.spark.SparkContext;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
+import org.apache.spark.api.java.function.Function2;
+import org.apache.spark.api.java.function.PairFunction;
+import org.apache.spark.sql.SQLContext;
+import org.apache.spark.SparkConf;
+import org.apache.spark.SparkContext;
+import org.apache.spark.sql.SparkSession;
+import com.datastax.spark.connector.*;
 import scala.Tuple2;
 
 import java.time.LocalDateTime;
@@ -33,12 +43,19 @@ public class SagittariusReader implements Reader {
     private MappingManager mappingManager;
     private Session session;
     private JavaSparkContext sparkContext;
+//    private SparkContext sc;
 
     public SagittariusReader(Session session, MappingManager mappingManager, JavaSparkContext sparkContext) {
         this.session = session;
         this.mappingManager = mappingManager;
         this.sparkContext = sparkContext;
     }
+
+//    public SagittariusReader(Session session, MappingManager mappingManager, SparkContext sparkContext) {
+//        this.session = session;
+//        this.mappingManager = mappingManager;
+//        this.sc = sparkContext;
+//    }
 
     private String getTableByType(ValueType valueType) {
         String table = null;
@@ -967,6 +984,7 @@ public class SagittariusReader implements Reader {
             if (startTimeSlice.equals(endTimeSlice)) {
                 String whereStr = String.format(QueryStatement.IN_PARTITION_WHERE_STATEMENT, hostsString, metricsString, startTimeSlice, startTime, endTime);
                 JavaRDD<T> rdd = (JavaRDD<T>) javaFunctions(sparkContext).cassandraTable("sagittarius", table, mapRowTo(klass)).where(whereStr);
+//                sc.
                 rdds.add(rdd);
                 continue;
             }
@@ -1037,22 +1055,126 @@ public class SagittariusReader implements Reader {
 
     @Override
     public Map<String, Map<String, List<IntPoint>>> getIntRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter) {
-        return null;
+        JavaRDD<IntData> rangeQueryRDD = getRangeQueryRDD(hosts, metrics, startTime, endTime, ValueType.INT);
+        JavaRDD<IntData> resultRDD = rangeQueryRDD.filter(data -> filter.toDoOrNotToDo(data.getValue()));
+        List<IntData> datas = resultRDD.collect();
+
+        Map<String, Map<String, List<IntPoint>>> result = new HashMap<>();
+        for (IntData data : datas) {
+            String host = data.getHost();
+            String metric = data.getMetric();
+            if (result.containsKey(host)) {
+                Map<String, List<IntPoint>> map = result.get(host);
+                if (map.containsKey(metric)) {
+                    map.get(metric).add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                } else {
+                    List<IntPoint> points = new ArrayList<>();
+                    points.add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                    map.put(metric, points);
+                }
+            } else {
+                Map<String, List<IntPoint>> map = new HashMap<>();
+                List<IntPoint> points = new ArrayList<>();
+                points.add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                map.put(metric, points);
+                result.put(host, map);
+            }
+        }
+
+        return result;
     }
 
     @Override
     public Map<String, Map<String, List<LongPoint>>> getLongRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter) {
-        return null;
+        JavaRDD<LongData> rangeQueryRDD = getRangeQueryRDD(hosts, metrics, startTime, endTime, ValueType.LONG);
+        JavaRDD<LongData> resultRDD = rangeQueryRDD.filter(data -> filter.toDoOrNotToDo(data.getValue()));
+        List<LongData> datas = resultRDD.collect();
+
+        Map<String, Map<String, List<LongPoint>>> result = new HashMap<>();
+        for (LongData data : datas) {
+            String host = data.getHost();
+            String metric = data.getMetric();
+            if (result.containsKey(host)) {
+                Map<String, List<LongPoint>> map = result.get(host);
+                if (map.containsKey(metric)) {
+                    map.get(metric).add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                } else {
+                    List<LongPoint> points = new ArrayList<>();
+                    points.add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                    map.put(metric, points);
+                }
+            } else {
+                Map<String, List<LongPoint>> map = new HashMap<>();
+                List<LongPoint> points = new ArrayList<>();
+                points.add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                map.put(metric, points);
+                result.put(host, map);
+            }
+        }
+
+        return result;
     }
 
     @Override
     public Map<String, Map<String, List<FloatPoint>>> getFloatRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter) {
-        return null;
+        JavaRDD<FloatData> rangeQueryRDD = getRangeQueryRDD(hosts, metrics, startTime, endTime, ValueType.FLOAT);
+        JavaRDD<FloatData> resultRDD = rangeQueryRDD.filter(data -> filter.toDoOrNotToDo(data.getValue()));
+        List<FloatData> datas = resultRDD.collect();
+
+        Map<String, Map<String, List<FloatPoint>>> result = new HashMap<>();
+        for (FloatData data : datas) {
+            String host = data.getHost();
+            String metric = data.getMetric();
+            if (result.containsKey(host)) {
+                Map<String, List<FloatPoint>> map = result.get(host);
+                if (map.containsKey(metric)) {
+                    map.get(metric).add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                } else {
+                    List<FloatPoint> points = new ArrayList<>();
+                    points.add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                    map.put(metric, points);
+                }
+            } else {
+                Map<String, List<FloatPoint>> map = new HashMap<>();
+                List<FloatPoint> points = new ArrayList<>();
+                points.add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                map.put(metric, points);
+                result.put(host, map);
+            }
+        }
+
+        return result;
     }
 
     @Override
     public Map<String, Map<String, List<DoublePoint>>> getDoubleRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter) {
-        return null;
+        JavaRDD<DoubleData> rangeQueryRDD = getRangeQueryRDD(hosts, metrics, startTime, endTime, ValueType.DOUBLE);
+        JavaRDD<DoubleData> resultRDD = rangeQueryRDD.filter(data -> filter.toDoOrNotToDo(data.getValue()));
+        List<DoubleData> datas = resultRDD.collect();
+
+        Map<String, Map<String, List<DoublePoint>>> result = new HashMap<>();
+        for (DoubleData data : datas) {
+            String host = data.getHost();
+            String metric = data.getMetric();
+            if (result.containsKey(host)) {
+                Map<String, List<DoublePoint>> map = result.get(host);
+                if (map.containsKey(metric)) {
+                    map.get(metric).add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                } else {
+                    List<DoublePoint> points = new ArrayList<>();
+                    points.add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                    map.put(metric, points);
+                }
+            } else {
+                Map<String, List<DoublePoint>> map = new HashMap<>();
+                List<DoublePoint> points = new ArrayList<>();
+                points.add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                map.put(metric, points);
+                result.put(host, map);
+            }
+        }
+
+        return result;
     }
 
     @Override
@@ -1088,37 +1210,374 @@ public class SagittariusReader implements Reader {
 
     @Override
     public Map<String, Map<String, List<StringPoint>>> getStringRange(List<String> hosts, List<String> metrics, long startTime, long endTime, StringFilter filter) {
-        return null;
+        JavaRDD<StringData> rangeQueryRDD = getRangeQueryRDD(hosts, metrics, startTime, endTime, ValueType.STRING);
+        JavaRDD<StringData> resultRDD = rangeQueryRDD.filter(data -> filter.toDoOrNotToDo(data.getValue()));
+        List<StringData> datas = resultRDD.collect();
+
+        Map<String, Map<String, List<StringPoint>>> result = new HashMap<>();
+        for (StringData data : datas) {
+            String host = data.getHost();
+            String metric = data.getMetric();
+            if (result.containsKey(host)) {
+                Map<String, List<StringPoint>> map = result.get(host);
+                if (map.containsKey(metric)) {
+                    map.get(metric).add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                } else {
+                    List<StringPoint> points = new ArrayList<>();
+                    points.add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                    map.put(metric, points);
+                }
+            } else {
+                Map<String, List<StringPoint>> map = new HashMap<>();
+                List<StringPoint> points = new ArrayList<>();
+                points.add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                map.put(metric, points);
+                result.put(host, map);
+            }
+        }
+
+        return result;
     }
 
     @Override
     public Map<String, Map<String, List<GeoPoint>>> getGeoRange(List<String> hosts, List<String> metrics, long startTime, long endTime, GeoFilter filter) {
-        return null;
+        JavaRDD<GeoData> rangeQueryRDD = getRangeQueryRDD(hosts, metrics, startTime, endTime, ValueType.GEO);
+        JavaRDD<GeoData> resultRDD = rangeQueryRDD.filter(data -> filter.toDoOrNotToDo(data.getLatitude(), data.getLongitude()));
+        List<GeoData> datas = resultRDD.collect();
+
+        Map<String, Map<String, List<GeoPoint>>> result = new HashMap<>();
+        for (GeoData data : datas) {
+            String host = data.getHost();
+            String metric = data.getMetric();
+            if (result.containsKey(host)) {
+                Map<String, List<GeoPoint>> map = result.get(host);
+                if (map.containsKey(metric)) {
+                    map.get(metric).add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
+                } else {
+                    List<GeoPoint> points = new ArrayList<>();
+                    points.add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
+                    map.put(metric, points);
+                }
+            } else {
+                Map<String, List<GeoPoint>> map = new HashMap<>();
+                List<GeoPoint> points = new ArrayList<>();
+                points.add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
+                map.put(metric, points);
+                result.put(host, map);
+            }
+        }
+
+        return result;
     }
 
     @Override
-    public Map<String, Map<String, Double>> getIntRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter, AggregationType aggregationType) {
-        return null;
+    public Map<String, Map<String, Integer>> getIntRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter, AggregationType aggregationType) {
+        JavaRDD<IntData> rangeQueryRDD = getRangeQueryRDD(hosts, metrics, startTime, endTime, ValueType.INT);
+        JavaRDD<IntData> resultRDD = rangeQueryRDD.filter(data -> filter.toDoOrNotToDo(data.getValue()));
+        Map<HostMetricPair, Integer> datas = null;
+
+        switch (aggregationType){
+            case MIN:{
+                datas = resultRDD
+                        .mapToPair(e -> new Tuple2<HostMetricPair, Integer>(new HostMetricPair(e.getHost(), e.getMetric()), e.getValue()))
+                        .reduceByKey((e1, e2) -> Math.min(e1, e2))
+//                        .aggregateByKey(Integer.MAX_VALUE, f, f)
+                        .collectAsMap();
+                break;
+            }
+            case MAX:{
+                datas = resultRDD
+                        .mapToPair(e -> new Tuple2<HostMetricPair, Integer>(new HostMetricPair(e.getHost(), e.getMetric()), e.getValue()))
+                        .reduceByKey((e1, e2) -> Math.max(e1, e2))
+                        .collectAsMap();
+                break;
+            }
+            case SUM:{
+                datas = resultRDD
+                        .mapToPair(e -> new Tuple2<HostMetricPair, Integer>(new HostMetricPair(e.getHost(), e.getMetric()), e.getValue()))
+                        .reduceByKey((e1, e2) -> e1 + e2)
+                        .collectAsMap();
+                break;
+            }
+            case COUNT:{
+                datas = resultRDD
+                        .mapToPair(e -> new Tuple2<HostMetricPair, Integer>(new HostMetricPair(e.getHost(), e.getMetric()), 1))
+                        .reduceByKey((e1, e2) -> e1 + e2)
+                        .collectAsMap();
+                break;
+            }
+            case AVG:{
+                Function2<Tuple2<Integer, Integer>,Tuple2<Integer, Integer>,Tuple2<Integer, Integer>> addAndCount = new Function2<Tuple2<Integer, Integer>, Tuple2<Integer, Integer>, Tuple2<Integer, Integer>>()
+                {
+                    public Tuple2<Integer, Integer> call(Tuple2<Integer, Integer> a, Tuple2<Integer, Integer> b) throws Exception {
+                        Tuple2<Integer, Integer> r = new Tuple2<>(a._1()+b._1(), a._2()+b._2());
+                        return r;
+                    }
+                };
+                PairFunction<Tuple2<HostMetricPair, Tuple2<Integer, Integer>>, HostMetricPair, Integer> getAvg = new PairFunction<Tuple2<HostMetricPair, Tuple2<Integer, Integer>>, HostMetricPair, Integer>() {
+                    @Override
+                    public Tuple2<HostMetricPair, Integer> call(Tuple2<HostMetricPair, Tuple2<Integer, Integer>> h) throws Exception {
+                        Tuple2<HostMetricPair, Integer> r = new Tuple2<HostMetricPair, Integer>(h._1, h._2()._1() / h._2()._2());
+                        return r;
+                    }
+                };
+                datas = resultRDD
+                        .mapToPair(e -> new Tuple2<HostMetricPair, Tuple2<Integer, Integer>>(new HostMetricPair(e.getHost(), e.getMetric()), new Tuple2<Integer, Integer>(e.getValue(),1)))
+                        .reduceByKey(addAndCount)
+                        .mapToPair(getAvg)
+                        .collectAsMap();
+                break;
+            }
+        }
+
+        Map<String, Map<String, Integer>> result = new HashMap<>();
+        for (Map.Entry<HostMetricPair, Integer> data : datas.entrySet()) {
+            String host = data.getKey().getHost();
+            String metric = data.getKey().getMetric();
+            if (result.containsKey(host)) {
+                result.get(host).put(metric, data.getValue());
+            } else {
+                Map<String, Integer> map = new HashMap<>();
+                map.put(metric, data.getValue());
+                result.put(host, map);
+            }
+        }
+
+        return result;
     }
 
     @Override
-    public Map<String, Map<String, Double>> getLongRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter, AggregationType aggregationType) {
-        return null;
+    public Map<String, Map<String, Long>> getLongRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter, AggregationType aggregationType) {
+        JavaRDD<LongData> rangeQueryRDD = getRangeQueryRDD(hosts, metrics, startTime, endTime, ValueType.LONG);
+        JavaRDD<LongData> resultRDD = rangeQueryRDD.filter(data -> filter.toDoOrNotToDo(data.getValue()));
+        Map<HostMetricPair, Long> datas = null;
+
+        switch (aggregationType){
+            case MIN:{
+                datas = resultRDD
+                        .mapToPair(e -> new Tuple2<HostMetricPair, Long>(new HostMetricPair(e.getHost(), e.getMetric()), e.getValue()))
+                        .reduceByKey((e1, e2) -> Math.min(e1, e2))
+//                        .aggregateByKey(Long.MAX_VALUE, f, f)
+                        .collectAsMap();
+                break;
+            }
+            case MAX:{
+                datas = resultRDD
+                        .mapToPair(e -> new Tuple2<HostMetricPair, Long>(new HostMetricPair(e.getHost(), e.getMetric()), e.getValue()))
+                        .reduceByKey((e1, e2) -> Math.max(e1, e2))
+                        .collectAsMap();
+                break;
+            }
+            case SUM:{
+                datas = resultRDD
+                        .mapToPair(e -> new Tuple2<HostMetricPair, Long>(new HostMetricPair(e.getHost(), e.getMetric()), e.getValue()))
+                        .reduceByKey((e1, e2) -> e1 + e2)
+                        .collectAsMap();
+                break;
+            }
+            case COUNT:{
+                datas = resultRDD
+                        .mapToPair(e -> new Tuple2<HostMetricPair, Long>(new HostMetricPair(e.getHost(), e.getMetric()), 1L))
+                        .reduceByKey((e1, e2) -> e1 + e2)
+                        .collectAsMap();
+                break;
+            }
+            case AVG:{
+                Function2<Tuple2<Long, Long>,Tuple2<Long, Long>,Tuple2<Long, Long>> addAndCount = new Function2<Tuple2<Long, Long>, Tuple2<Long, Long>, Tuple2<Long, Long>>()
+                {
+                    public Tuple2<Long, Long> call(Tuple2<Long, Long> a, Tuple2<Long, Long> b) throws Exception {
+                        Tuple2<Long, Long> r = new Tuple2<>(a._1()+b._1(), a._2()+b._2());
+                        return r;
+                    }
+                };
+                PairFunction<Tuple2<HostMetricPair, Tuple2<Long, Long>>, HostMetricPair, Long> getAvg = new PairFunction<Tuple2<HostMetricPair, Tuple2<Long, Long>>, HostMetricPair, Long>() {
+                    @Override
+                    public Tuple2<HostMetricPair, Long> call(Tuple2<HostMetricPair, Tuple2<Long, Long>> h) throws Exception {
+                        Tuple2<HostMetricPair, Long> r = new Tuple2<HostMetricPair, Long>(h._1, h._2()._1() / h._2()._2());
+                        return r;
+                    }
+                };
+                datas = resultRDD
+                        .mapToPair(e -> new Tuple2<HostMetricPair, Tuple2<Long, Long>>(new HostMetricPair(e.getHost(), e.getMetric()), new Tuple2<Long, Long>(e.getValue(),1L)))
+                        .reduceByKey(addAndCount)
+                        .mapToPair(getAvg)
+                        .collectAsMap();
+                break;
+            }
+        }
+
+        Map<String, Map<String, Long>> result = new HashMap<>();
+        for (Map.Entry<HostMetricPair, Long> data : datas.entrySet()) {
+            String host = data.getKey().getHost();
+            String metric = data.getKey().getMetric();
+            if (result.containsKey(host)) {
+                result.get(host).put(metric, data.getValue());
+            } else {
+                Map<String, Long> map = new HashMap<>();
+                map.put(metric, data.getValue());
+                result.put(host, map);
+            }
+        }
+
+        return result;
     }
 
     @Override
-    public Map<String, Map<String, Double>> getFloatRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter, AggregationType aggregationType) {
-        return null;
+    public Map<String, Map<String, Float>> getFloatRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter, AggregationType aggregationType) {
+        JavaRDD<FloatData> rangeQueryRDD = getRangeQueryRDD(hosts, metrics, startTime, endTime, ValueType.FLOAT);
+        JavaRDD<FloatData> resultRDD = rangeQueryRDD.filter(data -> filter.toDoOrNotToDo(data.getValue()));
+        Map<HostMetricPair, Float> datas = null;
+
+        switch (aggregationType){
+            case MIN:{
+                datas = resultRDD
+                        .mapToPair(e -> new Tuple2<HostMetricPair, Float>(new HostMetricPair(e.getHost(), e.getMetric()), e.getValue()))
+                        .reduceByKey((e1, e2) -> Math.min(e1, e2))
+//                        .aggregateByKey(Float.MAX_VALUE, f, f)
+                        .collectAsMap();
+                break;
+            }
+            case MAX:{
+                datas = resultRDD
+                        .mapToPair(e -> new Tuple2<HostMetricPair, Float>(new HostMetricPair(e.getHost(), e.getMetric()), e.getValue()))
+                        .reduceByKey((e1, e2) -> Math.max(e1, e2))
+                        .collectAsMap();
+                break;
+            }
+            case SUM:{
+                datas = resultRDD
+                        .mapToPair(e -> new Tuple2<HostMetricPair, Float>(new HostMetricPair(e.getHost(), e.getMetric()), e.getValue()))
+                        .reduceByKey((e1, e2) -> e1 + e2)
+                        .collectAsMap();
+                break;
+            }
+            case COUNT:{
+                datas = resultRDD
+                        .mapToPair(e -> new Tuple2<HostMetricPair, Float>(new HostMetricPair(e.getHost(), e.getMetric()), 1F))
+                        .reduceByKey((e1, e2) -> e1 + e2)
+                        .collectAsMap();
+                break;
+            }
+            case AVG:{
+                Function2<Tuple2<Float, Float>,Tuple2<Float, Float>,Tuple2<Float, Float>> addAndCount = new Function2<Tuple2<Float, Float>, Tuple2<Float, Float>, Tuple2<Float, Float>>()
+                {
+                    public Tuple2<Float, Float> call(Tuple2<Float, Float> a, Tuple2<Float, Float> b) throws Exception {
+                        Tuple2<Float, Float> r = new Tuple2<>(a._1()+b._1(), a._2()+b._2());
+                        return r;
+                    }
+                };
+                PairFunction<Tuple2<HostMetricPair, Tuple2<Float, Float>>, HostMetricPair, Float> getAvg = new PairFunction<Tuple2<HostMetricPair, Tuple2<Float, Float>>, HostMetricPair, Float>() {
+                    @Override
+                    public Tuple2<HostMetricPair, Float> call(Tuple2<HostMetricPair, Tuple2<Float, Float>> h) throws Exception {
+                        Tuple2<HostMetricPair, Float> r = new Tuple2<HostMetricPair, Float>(h._1, h._2()._1() / h._2()._2());
+                        return r;
+                    }
+                };
+                datas = resultRDD
+                        .mapToPair(e -> new Tuple2<HostMetricPair, Tuple2<Float, Float>>(new HostMetricPair(e.getHost(), e.getMetric()), new Tuple2<Float, Float>(e.getValue(),1F)))
+                        .reduceByKey(addAndCount)
+                        .mapToPair(getAvg)
+                        .collectAsMap();
+                break;
+            }
+        }
+
+        Map<String, Map<String, Float>> result = new HashMap<>();
+        for (Map.Entry<HostMetricPair, Float> data : datas.entrySet()) {
+            String host = data.getKey().getHost();
+            String metric = data.getKey().getMetric();
+            if (result.containsKey(host)) {
+                result.get(host).put(metric, data.getValue());
+            } else {
+                Map<String, Float> map = new HashMap<>();
+                map.put(metric, data.getValue());
+                result.put(host, map);
+            }
+        }
+
+        return result;
     }
 
     @Override
     public Map<String, Map<String, Double>> getDoubleRange(List<String> hosts, List<String> metrics, long startTime, long endTime, NumericFilter filter, AggregationType aggregationType) {
-        return null;
+        JavaRDD<DoubleData> rangeQueryRDD = getRangeQueryRDD(hosts, metrics, startTime, endTime, ValueType.DOUBLE);
+        JavaRDD<DoubleData> resultRDD = rangeQueryRDD.filter(data -> filter.toDoOrNotToDo(data.getValue()));
+        Map<HostMetricPair, Double> datas = null;
+
+        switch (aggregationType){
+            case MIN:{
+                datas = resultRDD
+                        .mapToPair(e -> new Tuple2<HostMetricPair, Double>(new HostMetricPair(e.getHost(), e.getMetric()), e.getValue()))
+                        .reduceByKey((e1, e2) -> Math.min(e1, e2))
+//                        .aggregateByKey(Double.MAX_VALUE, f, f)
+                        .collectAsMap();
+                break;
+            }
+            case MAX:{
+                datas = resultRDD
+                        .mapToPair(e -> new Tuple2<HostMetricPair, Double>(new HostMetricPair(e.getHost(), e.getMetric()), e.getValue()))
+                        .reduceByKey((e1, e2) -> Math.max(e1, e2))
+                        .collectAsMap();
+                break;
+            }
+            case SUM:{
+                datas = resultRDD
+                        .mapToPair(e -> new Tuple2<HostMetricPair, Double>(new HostMetricPair(e.getHost(), e.getMetric()), e.getValue()))
+                        .reduceByKey((e1, e2) -> e1 + e2)
+                        .collectAsMap();
+                break;
+            }
+            case COUNT:{
+                datas = resultRDD
+                        .mapToPair(e -> new Tuple2<HostMetricPair, Double>(new HostMetricPair(e.getHost(), e.getMetric()), 1d))
+                        .reduceByKey((e1, e2) -> e1 + e2)
+                        .collectAsMap();
+                break;
+            }
+            case AVG:{
+                Function2<Tuple2<Double, Double>,Tuple2<Double, Double>,Tuple2<Double, Double>> addAndCount = new Function2<Tuple2<Double, Double>, Tuple2<Double, Double>, Tuple2<Double, Double>>()
+                {
+                    public Tuple2<Double, Double> call(Tuple2<Double, Double> a, Tuple2<Double, Double> b) throws Exception {
+                        Tuple2<Double, Double> r = new Tuple2<>(a._1()+b._1(), a._2()+b._2());
+                        return r;
+                    }
+                };
+                PairFunction<Tuple2<HostMetricPair, Tuple2<Double, Double>>, HostMetricPair, Double> getAvg = new PairFunction<Tuple2<HostMetricPair, Tuple2<Double, Double>>, HostMetricPair, Double>() {
+                    @Override
+                    public Tuple2<HostMetricPair, Double> call(Tuple2<HostMetricPair, Tuple2<Double, Double>> h) throws Exception {
+                        Tuple2<HostMetricPair, Double> r = new Tuple2<HostMetricPair, Double>(h._1, h._2()._1() / h._2()._2());
+                        return r;
+                    }
+                };
+                datas = resultRDD
+                        .mapToPair(e -> new Tuple2<HostMetricPair, Tuple2<Double, Double>>(new HostMetricPair(e.getHost(), e.getMetric()), new Tuple2<Double, Double>(e.getValue(),1d)))
+                        .reduceByKey(addAndCount)
+                        .mapToPair(getAvg)
+                        .collectAsMap();
+                break;
+            }
+        }
+
+        Map<String, Map<String, Double>> result = new HashMap<>();
+        for (Map.Entry<HostMetricPair, Double> data : datas.entrySet()) {
+            String host = data.getKey().getHost();
+            String metric = data.getKey().getMetric();
+            if (result.containsKey(host)) {
+                result.get(host).put(metric, data.getValue());
+            } else {
+                Map<String, Double> map = new HashMap<>();
+                map.put(metric, data.getValue());
+                result.put(host, map);
+            }
+        }
+
+        return result;
     }
 
     @Override
     public Map<String, Map<String, Double>> getBooleanRange(List<String> hosts, List<String> metrics, long startTime, long endTime, BooleanFilter filter, AggregationType aggregationType) {
         JavaRDD<BooleanData> rangeQueryRDD = getRangeQueryRDD(hosts, metrics, startTime, endTime, ValueType.BOOLEAN);
+
         //count aggregation
         Map<HostMetricPair, Double> datas = rangeQueryRDD.filter(data -> Boolean.valueOf(data.getValue() == filter.getEq()))
                 .mapToPair(e -> new Tuple2<HostMetricPair, Double>(new HostMetricPair(e.getHost(), e.getMetric()), 1d))
@@ -1143,11 +1602,53 @@ public class SagittariusReader implements Reader {
 
     @Override
     public Map<String, Map<String, Double>> getStringRange(List<String> hosts, List<String> metrics, long startTime, long endTime, StringFilter filter, AggregationType aggregationType) {
-        return null;
+        JavaRDD<StringData> rangeQueryRDD = getRangeQueryRDD(hosts, metrics, startTime, endTime, ValueType.STRING);
+        JavaRDD<StringData> resultRDD = rangeQueryRDD.filter(data -> filter.toDoOrNotToDo(data.getValue()));
+
+        //count aggregation
+        Map<HostMetricPair, Double> datas = resultRDD
+                .mapToPair(e -> new Tuple2<HostMetricPair, Double>(new HostMetricPair(e.getHost(), e.getMetric()), 1d))
+                .reduceByKey((e1, e2) -> e1 + e2)
+                .collectAsMap();
+
+        Map<String, Map<String, Double>> result = new HashMap<>();
+        for (Map.Entry<HostMetricPair, Double> data : datas.entrySet()) {
+            String host = data.getKey().getHost();
+            String metric = data.getKey().getMetric();
+            if (result.containsKey(host)) {
+                result.get(host).put(metric, data.getValue());
+            } else {
+                Map<String, Double> map = new HashMap<>();
+                map.put(metric, data.getValue());
+                result.put(host, map);
+            }
+        }
+
+        return result;
     }
 
     @Override
     public Map<String, Map<String, Double>> getGeoRange(List<String> hosts, List<String> metrics, long startTime, long endTime, GeoFilter filter, AggregationType aggregationType) {
-        return null;
+        JavaRDD<GeoData> rangeQueryRDD = getRangeQueryRDD(hosts, metrics, startTime, endTime, ValueType.GEO);
+        JavaRDD<GeoData> resultRDD = rangeQueryRDD.filter(data -> filter.toDoOrNotToDo(data.getLatitude(), data.getLongitude()));
+        Map<HostMetricPair, Double> datas = resultRDD
+                .mapToPair(e -> new Tuple2<HostMetricPair, Double>(new HostMetricPair(e.getHost(), e.getMetric()), 1d))
+                .reduceByKey((e1, e2) -> e1 + e2)
+                .collectAsMap();
+
+        Map<String, Map<String, Double>> result = new HashMap<>();
+        for (Map.Entry<HostMetricPair, Double> data : datas.entrySet()) {
+            String host = data.getKey().getHost();
+            String metric = data.getKey().getMetric();
+            if (result.containsKey(host)) {
+                result.get(host).put(metric, data.getValue());
+            } else {
+                Map<String, Double> map = new HashMap<>();
+                map.put(metric, data.getValue());
+                result.put(host, map);
+            }
+        }
+
+        return result;
     }
 }
