@@ -4,8 +4,10 @@ import com.datastax.driver.core.Cluster;
 import com.sagittarius.bean.common.MetricMetadata;
 import com.sagittarius.bean.common.TimePartition;
 import com.sagittarius.bean.common.ValueType;
+import com.sagittarius.bean.query.SerializablePredicate;
 import com.sagittarius.bean.query.Shift;
 import com.sagittarius.bean.result.DoublePoint;
+import com.sagittarius.bean.result.FloatPoint;
 import com.sagittarius.core.SagittariusClient;
 import com.sagittarius.read.Reader;
 import com.sagittarius.write.Writer;
@@ -19,6 +21,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
+
+import static java.lang.System.exit;
 
 
 public class Example {
@@ -27,7 +32,14 @@ public class Example {
     public static void main(String[] args) {
         CassandraConnection connection = CassandraConnection.getInstance();
         Cluster cluster = connection.getCluster();
-        SagittariusClient client = new SagittariusClient(cluster, new SparkConf());
+        SparkConf sparkConf = new SparkConf();
+        sparkConf.setMaster("spark://192.168.3.17:7077").setAppName("spark-cassandra");
+        //to fix the can't assign from .. to .. Error
+        String[] jars = {"examples-1.0-SNAPSHOT-jar-with-dependencies.jar"};
+        sparkConf.setJars(jars);
+        sparkConf.set("spark.cassandra.connection.host", "192.168.3.17");
+        sparkConf.set("spark.cassandra.connection.port", "9042");
+        SagittariusClient client = new SagittariusClient(cluster, sparkConf);
         Writer writer = client.getWriter();
         Reader reader = client.getReader();
         //registerHostMetricInfo(writer);
@@ -36,13 +48,33 @@ public class Example {
         //insert(writer);
         //writeTest(writer, Integer.parseInt(args[0]), Integer.parseInt(args[1]));
         //batchWriteTest(writer, Integer.parseInt(args[0]), Integer.parseInt(args[1]), Integer.parseInt(args[2]));
-        batchWriteTest(writer, 1, 1, 1000);
+//        batchWriteTest(writer, 1, 1, 1000);
         //insertLoop(writer);
 
         //read(reader);
         //readbyRange(reader);
         //readFuzzy(reader);
+        floatRead(reader);
+        exit(0);
 
+    }
+
+    private static void floatRead(Reader reader){
+        ArrayList<String> hosts = new ArrayList<>();
+        hosts.add("128998");
+        ArrayList<String> metrics = new ArrayList<>();
+        metrics.add("发动机转速");
+        long start = LocalDateTime.of(2017,2,26,0,0).toEpochSecond(ZoneOffset.UTC)*1000;
+        long end = LocalDateTime.of(2017,2,27,23,59).toEpochSecond(ZoneOffset.UTC)*1000;
+        SerializablePredicate<Float> filter = new SerializablePredicate<Float>() {
+            @Override
+            public boolean test(Float aFloat) {
+                Float value = aFloat;
+                return value > 0;
+            }
+        };
+        Map<String, Map<String, List<FloatPoint>>> result = reader.getFloatRange(hosts, metrics, start, end, filter);
+        System.out.println(result.get("128998").get("发动机转速").size());
     }
 
     private static void batchWriteTest(Writer writer, int threads, int runTime, int batchSize) {
