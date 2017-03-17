@@ -671,8 +671,8 @@ public class SagittariusReader implements Reader {
                 continue;
             }
 
-            LocalDateTime start = LocalDateTime.ofEpochSecond(startTimeSecond, 0, ZoneOffset.UTC);
-            LocalDateTime end = LocalDateTime.ofEpochSecond(endTimeSecond, 0, ZoneOffset.UTC);
+            LocalDateTime start = LocalDateTime.ofEpochSecond(startTimeSecond, 0, TimeUtil.zoneOffset);
+            LocalDateTime end = LocalDateTime.ofEpochSecond(endTimeSecond, 0, TimeUtil.zoneOffset);
             List<LocalDateTime> totalDates = new ArrayList<>();
             while (!start.isAfter(end)) {
                 totalDates.add(start);
@@ -695,7 +695,7 @@ public class SagittariusReader implements Reader {
             querys.add(startQuery);
             for (int i = 1; i < totalDates.size() - 1; ++i) {
                 //the last datetime may be in the same timepartition with the end datetime, so it should be processed separately.
-                String query = String.format(QueryStatement.WHOLE_PARTITION_QUERY_STATEMENT, table, hostsString, metricsString, TimeUtil.generateTimeSlice(totalDates.get(i).toEpochSecond(ZoneOffset.UTC) * 1000, timePartition));
+                String query = String.format(QueryStatement.WHOLE_PARTITION_QUERY_STATEMENT, table, hostsString, metricsString, TimeUtil.generateTimeSlice(totalDates.get(i).toEpochSecond(TimeUtil.zoneOffset) * 1000, timePartition));
                 querys.add(query);
             }
             LocalDateTime last = totalDates.get(totalDates.size() - 1);
@@ -719,7 +719,7 @@ public class SagittariusReader implements Reader {
                     break;
             }
             if (!ifRepeat) {
-                String query = String.format(QueryStatement.WHOLE_PARTITION_QUERY_STATEMENT, table, hostsString, metricsString, TimeUtil.generateTimeSlice(last.toEpochSecond(ZoneOffset.UTC) * 1000, timePartition));
+                String query = String.format(QueryStatement.WHOLE_PARTITION_QUERY_STATEMENT, table, hostsString, metricsString, TimeUtil.generateTimeSlice(last.toEpochSecond(TimeUtil.zoneOffset) * 1000, timePartition));
                 querys.add(query);
             }
             String endQuery = String.format(QueryStatement.PARTIAL_PARTITION_QUERY_STATEMENT, table, hostsString, metricsString, endTimeSlice, "<=", endTime);
@@ -940,8 +940,8 @@ public class SagittariusReader implements Reader {
                 continue;
             }
 
-            LocalDateTime start = LocalDateTime.ofEpochSecond(startTimeSecond, 0, ZoneOffset.UTC);
-            LocalDateTime end = LocalDateTime.ofEpochSecond(endTimeSecond, 0, ZoneOffset.UTC);
+            LocalDateTime start = LocalDateTime.ofEpochSecond(startTimeSecond, 0, TimeUtil.zoneOffset);
+            LocalDateTime end = LocalDateTime.ofEpochSecond(endTimeSecond, 0, TimeUtil.zoneOffset);
             List<LocalDateTime> totalDates = new ArrayList<>();
             while (!start.isAfter(end)) {
                 totalDates.add(start);
@@ -966,7 +966,7 @@ public class SagittariusReader implements Reader {
 
             for (int i = 1; i < totalDates.size() - 1; ++i) {
                 //the last datetime may be in the same timepartition with the end datetime, so it should be processed separately.
-                String predicate = String.format(QueryStatement.WHOLE_PARTITION_WHERE_STATEMENT, hostsString, metricsString, TimeUtil.generateTimeSlice(totalDates.get(i).toEpochSecond(ZoneOffset.UTC) * 1000, timePartition));
+                String predicate = String.format(QueryStatement.WHOLE_PARTITION_WHERE_STATEMENT, hostsString, metricsString, TimeUtil.generateTimeSlice(totalDates.get(i).toEpochSecond(TimeUtil.zoneOffset) * 1000, timePartition));
                 predicates.add(predicate);
             }
             LocalDateTime last = totalDates.get(totalDates.size() - 1);
@@ -990,7 +990,7 @@ public class SagittariusReader implements Reader {
                     break;
             }
             if (!ifRepeat) {
-                String predicate = String.format(QueryStatement.WHOLE_PARTITION_WHERE_STATEMENT, hostsString, metricsString, TimeUtil.generateTimeSlice(last.toEpochSecond(ZoneOffset.UTC) * 1000, timePartition));
+                String predicate = String.format(QueryStatement.WHOLE_PARTITION_WHERE_STATEMENT, hostsString, metricsString, TimeUtil.generateTimeSlice(last.toEpochSecond(TimeUtil.zoneOffset) * 1000, timePartition));
                 predicates.add(predicate);
             }
 

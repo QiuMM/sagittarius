@@ -9,6 +9,7 @@ import java.util.Calendar;
 import static java.time.temporal.ChronoField.ALIGNED_WEEK_OF_YEAR;
 
 public class TimeUtil {
+    public static final ZoneOffset zoneOffset = ZoneOffset.ofHours(8);
     /*public static String generateTimeSlice(long timeMillis, TimePartition timePartition) {
         Calendar calendar = Calendar.getInstance();
         calendar.setTimeInMillis(timeMillis);
@@ -26,7 +27,7 @@ public class TimeUtil {
         }
     }*/
     public static String generateTimeSlice(long timeMillis, TimePartition timePartition) {
-        LocalDateTime time = LocalDateTime.ofEpochSecond(timeMillis/1000, 0, ZoneOffset.UTC);
+        LocalDateTime time = LocalDateTime.ofEpochSecond(timeMillis/1000, 0, zoneOffset);
         switch (timePartition) {
             case DAY:
                 return time.getYear() + "D" + time.getDayOfYear();
