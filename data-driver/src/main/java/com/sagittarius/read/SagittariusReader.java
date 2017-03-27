@@ -23,6 +23,9 @@ import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function2;
 import org.apache.spark.api.java.function.PairFunction;
+import org.apache.spark.sql.Dataset;
+import org.apache.spark.sql.Row;
+import org.apache.spark.sql.SQLContext;
 import scala.Tuple2;
 
 import java.time.LocalDateTime;
@@ -1234,21 +1237,25 @@ public class SagittariusReader implements Reader {
     @Override
     public Map<String, Map<String, List<StringPoint>>> getStringRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter) {
         List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
-        String regex = filter.split(" ")[2];
-        JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_text").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0)).filter(x -> x.getString("value").matches(regex));
+
+        Map<String, String> tmap = new HashMap<>();
+        tmap.put("keyspace", "sagittarius");
+        tmap.put("table", "data_text");
+        SQLContext sqlContext = new SQLContext(sparkContext);
+        Dataset<Row> resultRDD = sqlContext.read().format("org.apache.spark.sql.cassandra").options(tmap).load().select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + " and " + filter);
         for (int i = 1; i < predicates.size(); ++i) {
-            CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_text").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + " and " + filter);
+            Dataset<Row> rdd = sqlContext.read().format("org.apache.spark.sql.cassandra").options(tmap).load().select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + " and " + filter);
             resultRDD = resultRDD.union(rdd);
         }
-        List<CassandraRow> rows = resultRDD.collect();
+        Row[] rows = resultRDD.collect();
 
         Map<String, Map<String, List<StringPoint>>> result = new HashMap<>();
-        for (CassandraRow row : rows) {
-            String host = row.getString("host");
-            String metric = row.getString("metric");
-            long primaryTime = row.getLong("primary_time");
-            long secondaryTime = row.getLong("secondary_time") != null ? row.getLong("secondary_time") : -1;
-            String value = row.getString("value");
+        for (Row row : rows) {
+            String host = row.getString(0);
+            String metric = row.getString(1);
+            long primaryTime = row.getLong(2);
+            long secondaryTime = row.get(3) != null ? row.getLong(3) : -1;
+            String value = row.getString(5);
             StringPoint point = new StringPoint(metric, primaryTime, secondaryTime, value);
             if (result.containsKey(host)) {
                 Map<String, List<StringPoint>> map = result.get(host);
@@ -1591,15 +1598,19 @@ public class SagittariusReader implements Reader {
     @Override
     public Map<String, Map<String, Double>> getStringRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType) {
         List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
-        String regex = filter.split(" ")[2];
-        JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_text").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0)).filter(x -> x.getString("value").matches(regex));
+
+        Map<String, String> tmap = new HashMap<>();
+        tmap.put("keyspace", "sagittarius");
+        tmap.put("table", "data_text");
+        SQLContext sqlContext = new SQLContext(sparkContext);
+        Dataset<Row> resultRDD = sqlContext.read().format("org.apache.spark.sql.cassandra").options(tmap).load().select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + " and " + filter);
         for (int i = 1; i < predicates.size(); ++i) {
-            CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_text").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + " and " + filter);
-            resultRDD = resultRDD.union(rdd);
+            Dataset<Row> xrdd = sqlContext.read().format("org.apache.spark.sql.cassandra").options(tmap).load().select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + " and " + filter);
+            resultRDD = resultRDD.union(xrdd);
         }
 
-        Map<HostMetricPair, Double> datas = resultRDD
-                .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), 1d))
+        Map<HostMetricPair, Double> datas = resultRDD.toJavaRDD()
+                .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString(0), e.getString(1)), 1d))
                 .reduceByKey((e1, e2) -> e1 + e2)
                 .collectAsMap();
 
