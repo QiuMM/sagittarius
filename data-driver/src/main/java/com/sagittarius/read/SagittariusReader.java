@@ -24,6 +24,12 @@ import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function2;
 import org.apache.spark.api.java.function.PairFunction;
 import scala.Tuple2;
+import scala.tools.cmd.gen.AnyVals;
+import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.sql.Dataset;
+import org.apache.spark.sql.Row;
+import org.apache.spark.sql.SQLContext;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -677,8 +683,8 @@ public class SagittariusReader implements Reader {
                 continue;
             }
 
-            LocalDateTime start = LocalDateTime.ofEpochSecond(startTimeSecond, 0, ZoneOffset.UTC);
-            LocalDateTime end = LocalDateTime.ofEpochSecond(endTimeSecond, 0, ZoneOffset.UTC);
+            LocalDateTime start = LocalDateTime.ofEpochSecond(startTimeSecond, 0, TimeUtil.zoneOffset);
+            LocalDateTime end = LocalDateTime.ofEpochSecond(endTimeSecond, 0, TimeUtil.zoneOffset);
             List<LocalDateTime> totalDates = new ArrayList<>();
             while (!start.isAfter(end)) {
                 totalDates.add(start);
@@ -701,7 +707,7 @@ public class SagittariusReader implements Reader {
             querys.add(startQuery);
             for (int i = 1; i < totalDates.size() - 1; ++i) {
                 //the last datetime may be in the same timepartition with the end datetime, so it should be processed separately.
-                String query = String.format(QueryStatement.WHOLE_PARTITION_QUERY_STATEMENT, table, hostsString, metricsString, TimeUtil.generateTimeSlice(totalDates.get(i).toEpochSecond(ZoneOffset.UTC) * 1000, timePartition));
+                String query = String.format(QueryStatement.WHOLE_PARTITION_QUERY_STATEMENT, table, hostsString, metricsString, TimeUtil.generateTimeSlice(totalDates.get(i).toEpochSecond(TimeUtil.zoneOffset) * 1000, timePartition));
                 querys.add(query);
             }
             LocalDateTime last = totalDates.get(totalDates.size() - 1);
@@ -725,7 +731,7 @@ public class SagittariusReader implements Reader {
                     break;
             }
             if (!ifRepeat) {
-                String query = String.format(QueryStatement.WHOLE_PARTITION_QUERY_STATEMENT, table, hostsString, metricsString, TimeUtil.generateTimeSlice(last.toEpochSecond(ZoneOffset.UTC) * 1000, timePartition));
+                String query = String.format(QueryStatement.WHOLE_PARTITION_QUERY_STATEMENT, table, hostsString, metricsString, TimeUtil.generateTimeSlice(last.toEpochSecond(TimeUtil.zoneOffset) * 1000, timePartition));
                 querys.add(query);
             }
             String endQuery = String.format(QueryStatement.PARTIAL_PARTITION_QUERY_STATEMENT, table, hostsString, metricsString, endTimeSlice, "<=", endTime);
@@ -974,8 +980,8 @@ public class SagittariusReader implements Reader {
                 continue;
             }
 
-            LocalDateTime start = LocalDateTime.ofEpochSecond(startTimeSecond, 0, ZoneOffset.UTC);
-            LocalDateTime end = LocalDateTime.ofEpochSecond(endTimeSecond, 0, ZoneOffset.UTC);
+            LocalDateTime start = LocalDateTime.ofEpochSecond(startTimeSecond, 0, TimeUtil.zoneOffset);
+            LocalDateTime end = LocalDateTime.ofEpochSecond(endTimeSecond, 0, TimeUtil.zoneOffset);
             List<LocalDateTime> totalDates = new ArrayList<>();
             while (!start.isAfter(end)) {
                 totalDates.add(start);
@@ -1000,7 +1006,7 @@ public class SagittariusReader implements Reader {
 
             for (int i = 1; i < totalDates.size() - 1; ++i) {
                 //the last datetime may be in the same timepartition with the end datetime, so it should be processed separately.
-                String predicate = String.format(QueryStatement.WHOLE_PARTITION_WHERE_STATEMENT, hostsString, metricsString, TimeUtil.generateTimeSlice(totalDates.get(i).toEpochSecond(ZoneOffset.UTC) * 1000, timePartition));
+                String predicate = String.format(QueryStatement.WHOLE_PARTITION_WHERE_STATEMENT, hostsString, metricsString, TimeUtil.generateTimeSlice(totalDates.get(i).toEpochSecond(TimeUtil.zoneOffset) * 1000, timePartition));
                 predicates.add(predicate);
             }
             LocalDateTime last = totalDates.get(totalDates.size() - 1);
@@ -1024,7 +1030,7 @@ public class SagittariusReader implements Reader {
                     break;
             }
             if (!ifRepeat) {
-                String predicate = String.format(QueryStatement.WHOLE_PARTITION_WHERE_STATEMENT, hostsString, metricsString, TimeUtil.generateTimeSlice(last.toEpochSecond(ZoneOffset.UTC) * 1000, timePartition));
+                String predicate = String.format(QueryStatement.WHOLE_PARTITION_WHERE_STATEMENT, hostsString, metricsString, TimeUtil.generateTimeSlice(last.toEpochSecond(TimeUtil.zoneOffset) * 1000, timePartition));
                 predicates.add(predicate);
             }
 
@@ -1070,9 +1076,8 @@ public class SagittariusReader implements Reader {
                 result.put(host, map);
             }
         }
-
+    
         return result;
-
     }
 
     @Override
@@ -1273,33 +1278,43 @@ public class SagittariusReader implements Reader {
 
     @Override
     public Map<String, Map<String, List<GeoPoint>>> getGeoRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter) {
-        /*JavaRDD<GeoData> rangeQueryRDD = getRangeQueryRDD(hosts, metrics, startTime, endTime, ValueType.GEO);
-        JavaRDD<GeoData> resultRDD = rangeQueryRDD.filter(data -> filter.test(data));
-        List<GeoData> datas = resultRDD.collect();
+        List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
+        String queryFilter = (filter == null) ? "" : " and " + filter;
+        JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_geo").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
+        for (int i = 1; i < predicates.size(); ++i) {
+            CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_geo").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
+            resultRDD = resultRDD.union(rdd);
+        }
+        List<CassandraRow> rows = resultRDD.collect();
 
         Map<String, Map<String, List<GeoPoint>>> result = new HashMap<>();
-        for (GeoData data : datas) {
-            String host = data.getHost();
-            String metric = data.getMetric();
+        for (CassandraRow row : rows) {
+            String host = row.getString("host");
+            String metric = row.getString("metric");
+            long primaryTime = row.getLong("primary_time");
+            long secondaryTime = row.getLong("secondary_time") != null ? row.getLong("secondary_time") : -1;
+            float latitude = row.getFloat("latitude");
+            float longitude = row.getFloat("longitude");
+            GeoPoint point = new GeoPoint(metric, primaryTime, secondaryTime, latitude, longitude);
             if (result.containsKey(host)) {
                 Map<String, List<GeoPoint>> map = result.get(host);
                 if (map.containsKey(metric)) {
-                    map.get(metric).add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
+                    map.get(metric).add(point);
                 } else {
                     List<GeoPoint> points = new ArrayList<>();
-                    points.add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
+                    points.add(point);
                     map.put(metric, points);
                 }
             } else {
                 Map<String, List<GeoPoint>> map = new HashMap<>();
                 List<GeoPoint> points = new ArrayList<>();
-                points.add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
+                points.add(point);
                 map.put(metric, points);
                 result.put(host, map);
             }
-        }*/
+        }
 
-        return null;
+        return result;
     }
 
     @Override
@@ -1350,6 +1365,7 @@ public class SagittariusReader implements Reader {
                 break;
             }
         }
+      
         Map<String, Map<String, Double>> result = new HashMap<>();
         for (Map.Entry<HostMetricPair, Double> data : datas.entrySet()) {
             String host = data.getKey().getHost();
@@ -1414,6 +1430,7 @@ public class SagittariusReader implements Reader {
                 break;
             }
         }
+      
         Map<String, Map<String, Double>> result = new HashMap<>();
         for (Map.Entry<HostMetricPair, Double> data : datas.entrySet()) {
             String host = data.getKey().getHost();
@@ -1478,6 +1495,7 @@ public class SagittariusReader implements Reader {
                 break;
             }
         }
+      
         Map<String, Map<String, Double>> result = new HashMap<>();
         for (Map.Entry<HostMetricPair, Double> data : datas.entrySet()) {
             String host = data.getKey().getHost();
@@ -1542,6 +1560,7 @@ public class SagittariusReader implements Reader {
                 break;
             }
         }
+      
         Map<String, Map<String, Double>> result = new HashMap<>();
         for (Map.Entry<HostMetricPair, Double> data : datas.entrySet()) {
             String host = data.getKey().getHost();
@@ -1554,7 +1573,7 @@ public class SagittariusReader implements Reader {
                 result.put(host, map);
             }
         }
-
+      
         return result;
     }
 
@@ -1584,7 +1603,7 @@ public class SagittariusReader implements Reader {
                 result.put(host, map);
             }
         }
-
+      
         return result;
     }
 
@@ -1594,7 +1613,7 @@ public class SagittariusReader implements Reader {
         String regex = filter.split(" ")[2];
         JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_text").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0)).filter(x -> x.getString("value").matches(regex));
         for (int i = 1; i < predicates.size(); ++i) {
-            CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_text").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + " and " + filter);
+            JavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_text").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i)).filter(x -> x.getString("value").matches(regex));
             resultRDD = resultRDD.union(rdd);
         }
 
@@ -1621,10 +1640,17 @@ public class SagittariusReader implements Reader {
 
     @Override
     public Map<String, Map<String, Double>> getGeoRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType) {
-        /*JavaRDD<GeoData> rangeQueryRDD = getRangeQueryRDD(hosts, metrics, startTime, endTime, ValueType.GEO);
-        JavaRDD<GeoData> resultRDD = rangeQueryRDD.filter(data -> filter.test(data));
+        List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
+        String queryFilter = (filter == null) ? "" : " and " + filter;
+        JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_geo").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
+        for (int i = 1; i < predicates.size(); ++i) {
+            CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_geo").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
+            resultRDD = resultRDD.union(rdd);
+        }
+
+        //only count
         Map<HostMetricPair, Double> datas = resultRDD
-                .mapToPair(e -> new Tuple2<HostMetricPair, Double>(new HostMetricPair(e.getHost(), e.getMetric()), 1d))
+                .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), 1d))
                 .reduceByKey((e1, e2) -> e1 + e2)
                 .collectAsMap();
 
@@ -1639,8 +1665,8 @@ public class SagittariusReader implements Reader {
                 map.put(metric, data.getValue());
                 result.put(host, map);
             }
-        }*/
+        }
 
-        return null;
+        return result;
     }
 }

@@ -4,12 +4,14 @@ import com.datastax.driver.core.Cluster;
 import com.sagittarius.bean.common.MetricMetadata;
 import com.sagittarius.bean.common.TimePartition;
 import com.sagittarius.bean.common.ValueType;
-import com.sagittarius.bean.query.SerializablePredicate;
+import com.sagittarius.bean.query.Filter;
 import com.sagittarius.bean.query.Shift;
 import com.sagittarius.bean.result.DoublePoint;
 import com.sagittarius.bean.result.FloatPoint;
 import com.sagittarius.core.SagittariusClient;
 import com.sagittarius.read.Reader;
+import com.sagittarius.read.SagittariusReader;
+import com.sagittarius.util.TimeUtil;
 import com.sagittarius.write.Writer;
 import org.apache.spark.SparkConf;
 import org.slf4j.Logger;
@@ -21,9 +23,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Predicate;
-
-import static java.lang.System.exit;
 
 
 public class Example {
@@ -32,16 +31,23 @@ public class Example {
     public static void main(String[] args) {
         CassandraConnection connection = CassandraConnection.getInstance();
         Cluster cluster = connection.getCluster();
+
+        long time = System.currentTimeMillis();
+
         SparkConf sparkConf = new SparkConf();
-        sparkConf.setMaster("spark://192.168.3.17:7077").setAppName("spark-cassandra");
+        sparkConf.setMaster("spark://192.168.3.17:7077").setAppName("test");
         //to fix the can't assign from .. to .. Error
-        String[] jars = {"examples-1.0-SNAPSHOT-jar-with-dependencies.jar"};
-        sparkConf.setJars(jars);
+        //String[] jars = {"examples-1.0-SNAPSHOT-jar-with-dependencies.jar"};
+        //sparkConf.setJars(jars);
         sparkConf.set("spark.cassandra.connection.host", "192.168.3.17");
         sparkConf.set("spark.cassandra.connection.port", "9042");
+        //sparkConf.set("spark.driver.maxResultSize", "20g");
         SagittariusClient client = new SagittariusClient(cluster, sparkConf);
         Writer writer = client.getWriter();
-        Reader reader = client.getReader();
+        SagittariusReader reader = (SagittariusReader)client.getReader();
+        //reader.test();
+        floatRead(reader);
+        logger.info("consume time: " + (System.currentTimeMillis() - time) + "ms");
         //registerHostMetricInfo(writer);
         //registerHostTags(writer);
         //registerOwnerInfo(writer);
@@ -54,8 +60,8 @@ public class Example {
         //read(reader);
         //readbyRange(reader);
         //readFuzzy(reader);
-        floatRead(reader);
-        exit(0);
+        //floatRead(reader);
+        //exit(0);
 
     }
 
@@ -64,15 +70,9 @@ public class Example {
         hosts.add("128998");
         ArrayList<String> metrics = new ArrayList<>();
         metrics.add("发动机转速");
-        long start = LocalDateTime.of(2017,2,26,0,0).toEpochSecond(ZoneOffset.UTC)*1000;
-        long end = LocalDateTime.of(2017,2,27,23,59).toEpochSecond(ZoneOffset.UTC)*1000;
-        SerializablePredicate<Float> filter = new SerializablePredicate<Float>() {
-            @Override
-            public boolean test(Float aFloat) {
-                Float value = aFloat;
-                return value > 0;
-            }
-        };
+        long start = LocalDateTime.of(2017,2,26,0,0).toEpochSecond(TimeUtil.zoneOffset)*1000;
+        long end = LocalDateTime.of(2017,2,27,23,59).toEpochSecond(TimeUtil.zoneOffset)*1000;
+        String filter = "value >= 33 and value <= 34";
         Map<String, Map<String, List<FloatPoint>>> result = reader.getFloatRange(hosts, metrics, start, end, filter);
         System.out.println(result.get("128998").get("发动机转速").size());
     }
@@ -193,11 +193,11 @@ public class Example {
         metrics.add("APP");
         LocalDateTime start = LocalDateTime.of(1993,10,11,0,0);
         LocalDateTime end = LocalDateTime.of(1993,10,14,5,59);
-        Map<String, List<DoublePoint>> result = reader.getDoubleRange(hosts, metrics,start.toEpochSecond(ZoneOffset.UTC)*1000,end.toEpochSecond(ZoneOffset.UTC)*1000);
+        Map<String, List<DoublePoint>> result = reader.getDoubleRange(hosts, metrics,start.toEpochSecond(TimeUtil.zoneOffset)*1000,end.toEpochSecond(TimeUtil.zoneOffset)*1000);
         for (Map.Entry<String, List<DoublePoint>> entry : result.entrySet()) {
             System.out.println(entry.getKey());
             for (DoublePoint point : entry.getValue()) {
-                System.out.println(point.getMetric() + " " + point.getPrimaryTime()+" "+ LocalDateTime.ofEpochSecond(point.getPrimaryTime()/1000,0,ZoneOffset.UTC) + " " + point.getValue());
+                System.out.println(point.getMetric() + " " + point.getPrimaryTime()+" "+ LocalDateTime.ofEpochSecond(point.getPrimaryTime()/1000,0,TimeUtil.zoneOffset) + " " + point.getValue());
             }
         }
     }
@@ -217,8 +217,8 @@ public class Example {
         System.out.println("插入");
         while (!start.isAfter(end)) {
             double value=Math.random()*100;
-            writer.insert("1282835", "APP", start.toEpochSecond(ZoneOffset.UTC)*1000, start.toEpochSecond(ZoneOffset.UTC)*1000, TimePartition.DAY,value );
-            System.out.println("APP" + " " + start.toEpochSecond(ZoneOffset.UTC)*1000+" "+ start.toString()+ " " + value);
+            writer.insert("1282835", "APP", start.toEpochSecond(TimeUtil.zoneOffset)*1000, start.toEpochSecond(TimeUtil.zoneOffset)*1000, TimePartition.DAY,value );
+            System.out.println("APP" + " " + start.toEpochSecond(TimeUtil.zoneOffset)*1000+" "+ start.toString()+ " " + value);
             start = start.plusHours(6);
         }
     }

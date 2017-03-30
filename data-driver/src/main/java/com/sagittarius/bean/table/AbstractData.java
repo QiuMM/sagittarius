@@ -76,11 +76,9 @@ public abstract class AbstractData {
         this.secondaryTime = secondaryTime;
     }
 
-
     public long secondaryTimeUnboxed(){
         if(secondaryTime==null)
             return -1;
         return secondaryTime;
     }
-
 }

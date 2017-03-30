@@ -9,7 +9,6 @@ import com.sagittarius.bean.table.GeoData;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Predicate;
 
 public interface Reader {
     /**
