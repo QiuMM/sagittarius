@@ -2,30 +2,20 @@ package com.sagittarius.util;
 
 import com.sagittarius.bean.common.TimePartition;
 
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Calendar;
+import java.util.Date;
 
 import static java.time.temporal.ChronoField.ALIGNED_WEEK_OF_YEAR;
 
 public class TimeUtil {
     public static final ZoneOffset zoneOffset = ZoneOffset.ofHours(8);
-    /*public static String generateTimeSlice(long timeMillis, TimePartition timePartition) {
-        Calendar calendar = Calendar.getInstance();
-        calendar.setTimeInMillis(timeMillis);
-        switch (timePartition) {
-            case DAY:
-                return calendar.get(Calendar.YEAR ) + "D" + calendar.get(Calendar.DAY_OF_YEAR);
-            case WEEK:
-                return calendar.get(Calendar.YEAR) + "W" + calendar.get(Calendar.WEEK_OF_YEAR);
-            case MONTH:
-                return calendar.get(Calendar.YEAR) + "M" + (calendar.get(Calendar.MONTH ) + 1);
-            case YEAR:
-                return calendar.get(Calendar.YEAR) + "";
-            default:
-                return null;
-        }
-    }*/
+    public static final SimpleDateFormat dateFormat1 = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+    public static final SimpleDateFormat dateFormat2 = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
+
     public static String generateTimeSlice(long timeMillis, TimePartition timePartition) {
         LocalDateTime time = LocalDateTime.ofEpochSecond(timeMillis/1000, 0, zoneOffset);
         switch (timePartition) {
@@ -42,25 +32,11 @@ public class TimeUtil {
         }
     }
 
-    public static String getYearFromTimeSlice(String timeSlice, TimePartition timePartition){
-        switch (timePartition) {
-            case DAY:
-                return timeSlice.substring(0,timeSlice.indexOf("D") + 1);
-            case WEEK:
-                return timeSlice.substring(0,timeSlice.indexOf("W") + 1);
-            case MONTH:
-                return timeSlice.substring(0,timeSlice.indexOf("M") + 1);
-            case YEAR:
-                return timeSlice;
-            default:
-                return null;
-        }
-
+    public static String date2String(long date, SimpleDateFormat sdf) {
+        return sdf.format(new Date(date));
     }
-    public static boolean ifInSameYear(String timeSlice1,String timeSlice2, TimePartition timePartition){
-        if(getYearFromTimeSlice(timeSlice1,timePartition).equals(getYearFromTimeSlice(timeSlice2,timePartition)))
-            return true;
-        return false;
 
+    public static long string2Date(String time, SimpleDateFormat sdf) throws ParseException {
+        return sdf.parse(time).getTime();
     }
 }

@@ -6,6 +6,7 @@ import com.sagittarius.bean.query.*;
 import com.sagittarius.bean.result.*;
 import com.sagittarius.bean.table.GeoData;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -15,16 +16,9 @@ public interface Reader {
      * given hosts list and metrics list,each host is associated with the same list of metrics , get map of valueType.
      * @param hosts lists of hosts
      * @param metrics lists of metrics
-     * @return map of valueType, the key is valueType, the value is a map containing list of hosts and list of metrics which are of this valueType
+     * @return map of valueType, the key is host, the value is a map whose key is metric and value is the corresponding ValueType
      */
-    Map<ValueType, Map<String, Set<String>>> getDataType(List<String> hosts, List<String> metrics);
-    /**
-     * given host and metric, get the corresponding valueType.
-     * @param host host
-     * @param metric metric
-     * @return valueType corresponding to that specified metric
-     */
-    ValueType getDataType(String host, String metric);
+    Map<String, Map<String, ValueType>> getValueType(List<String> hosts, List<String> metrics);
 
     /**
      * given hosts list and metrics list,each host is associated with the same list of metrics , get IntPoints at the query time.
@@ -321,4 +315,18 @@ public interface Reader {
     Map<String, Map<String, Double>> getStringRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType);
 
     Map<String, Map<String, Double>> getGeoRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType);
+
+    void exportIntCSV(List<String> hosts, List<String> metrics, long startTime, long endTime, int splitHours, String filter, String filePath) throws IOException;
+
+    void exportLongCSV(List<String> hosts, List<String> metrics, long startTime, long endTime, int splitHours, String filter, String filePath) throws IOException;
+
+    void exportFloatCSV(List<String> hosts, List<String> metrics, long startTime, long endTime, int splitHours, String filter, String filePath) throws IOException;
+
+    void exportDoubleCSV(List<String> hosts, List<String> metrics, long startTime, long endTime, int splitHours, String filter, String filePath) throws IOException;
+
+    void exportBooleanCSV(List<String> hosts, List<String> metrics, long startTime, long endTime, int splitHours, String filter, String filePath) throws IOException;
+
+    void exportStringCSV(List<String> hosts, List<String> metrics, long startTime, long endTime, int splitHours, String filter, String filePath) throws IOException;
+
+    void exportGeoCSV(List<String> hosts, List<String> metrics, long startTime, long endTime, int splitHours, String filter, String filePath) throws IOException;
 }
