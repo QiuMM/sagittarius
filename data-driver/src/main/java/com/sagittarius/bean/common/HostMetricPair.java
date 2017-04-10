@@ -1,6 +1,8 @@
 package com.sagittarius.bean.common;
 
-public class HostMetricPair {
+import java.io.Serializable;
+
+public class HostMetricPair implements Serializable{
     private String host;
     private String metric;
     private int hashCode;
