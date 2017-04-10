@@ -150,4 +150,6 @@ public interface Writer {
      * @param longitude longitude value
      */
     void insert(String host, String metric, long primaryTime, long secondaryTime, TimePartition timePartition, float latitude, float longitude);
+
+
 }

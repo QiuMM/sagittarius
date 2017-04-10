@@ -44,14 +44,14 @@ public class BatchWriteTask extends Thread {
         long time = System.currentTimeMillis();
         long consumeTime = 0;
         while ((System.currentTimeMillis() - start) < runTime * 60 * 60 * 1000) {
-            SagittariusWriter.Datas datas = writer.newDatas();
+            SagittariusWriter.Data data = writer.newData();
             for (int i = 0; i < batchSize; ++i) {
-                datas.addData(host, "APP", time, time, TimePartition.DAY, random.nextDouble() * 100);
+                data.addDatum(host, "APP", time, time, TimePartition.DAY, random.nextDouble() * 100);
                 ++time;
             }
             long startTime = System.currentTimeMillis();
             try {
-                writer.bulkInsert(datas);
+                writer.bulkInsert(data);
                 count += batchSize;
             } catch (NoHostAvailableException | WriteTimeoutException e) {
                 logger.info("Exception: ", e);

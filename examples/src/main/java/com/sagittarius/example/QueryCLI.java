@@ -24,7 +24,7 @@ public class QueryCLI {
         Scanner sc = new Scanner(System.in);
         CassandraConnection connection = CassandraConnection.getInstance();
         Cluster cluster = connection.getCluster();
-        SagittariusClient client = new SagittariusClient(cluster, new SparkConf());
+        SagittariusClient client = new SagittariusClient(cluster, new SparkConf(), 10000, 3000, 2);
         Reader reader = client.getReader();
         System.out.println("-------------------------------------------------------------\nWelcome to");
         String logo = "            __ __ __  ____  __ ______     \n" +

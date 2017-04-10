@@ -126,7 +126,7 @@ public class WriteTest {
                 int offset = 3; //从第4列开始为传感器
                 Sheet sheet = wb.getSheetAt(0);
                 int rowSize = sheet.getLastRowNum() + 1;
-                SagittariusWriter.Datas datas = writer.newDatas();
+                SagittariusWriter.Data data = writer.newData();
                 int batchCount = batchSize;
                 double value;
                 List<String> metrics = new ArrayList<>();
@@ -147,19 +147,19 @@ public class WriteTest {
                             if (batchCount == 0) {
                                 try {
                                     long startTime = System.currentTimeMillis();
-                                    writer.bulkInsert(datas);
+                                    writer.bulkInsert(data);
                                     consumeTime += System.currentTimeMillis() - startTime;
                                     count += batchSize;
                                     throughput = count / ((double) consumeTime / 1000);
                                 }catch (NoHostAvailableException | WriteTimeoutException e) {
                                     //logger.info(e.getMessage());
                                 }
-                                datas = writer.newDatas();
+                                data = writer.newData();
                                 batchCount = batchSize;
                             }
                             try {
                                 value = Double.parseDouble(cellValue);
-                                datas.addData(host, metrics.get(k), primaryTime, secondaryTime, TimePartition.DAY, value);
+                                data.addDatum(host, metrics.get(k), primaryTime, secondaryTime, TimePartition.DAY, value);
                                 batchCount--;
                             } catch (NumberFormatException e) {
                                 //logger.warn(e.getMessage());
@@ -225,7 +225,7 @@ public class WriteTest {
     public static void main(String[] args) {
         CassandraConnection connection = CassandraConnection.getInstance();
         Cluster cluster = connection.getCluster();
-        SagittariusClient client = new SagittariusClient(cluster, new SparkConf());
+        SagittariusClient client = new SagittariusClient(cluster, new SparkConf(), 10000, 3000, 2);
         Writer writer = client.getWriter();
         new WriteTest(args[0], Integer.parseInt(args[1])).test(writer, Integer.parseInt(args[2]));
         //new WriteTest("./examples/data/201606/", 1000).test(writer, 15);

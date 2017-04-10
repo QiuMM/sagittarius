@@ -1,10 +1,11 @@
 package com.sagittarius.example;
 
 import com.datastax.driver.core.Cluster;
+import com.datastax.spark.connector.japi.CassandraRow;
+import com.datastax.spark.connector.japi.rdd.CassandraTableScanJavaRDD;
 import com.sagittarius.bean.common.MetricMetadata;
 import com.sagittarius.bean.common.TimePartition;
 import com.sagittarius.bean.common.ValueType;
-import com.sagittarius.bean.query.Filter;
 import com.sagittarius.bean.query.Shift;
 import com.sagittarius.bean.result.DoublePoint;
 import com.sagittarius.bean.result.FloatPoint;
@@ -14,15 +15,14 @@ import com.sagittarius.read.SagittariusReader;
 import com.sagittarius.util.TimeUtil;
 import com.sagittarius.write.Writer;
 import org.apache.spark.SparkConf;
+import org.apache.spark.api.java.JavaSparkContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+
+import static com.datastax.spark.connector.japi.CassandraJavaUtil.javaFunctions;
 
 
 public class Example {
@@ -41,13 +41,35 @@ public class Example {
         //sparkConf.setJars(jars);
         sparkConf.set("spark.cassandra.connection.host", "192.168.3.17");
         sparkConf.set("spark.cassandra.connection.port", "9042");
+        sparkConf.set("spark.cassandra.connection.keep_alive_ms", "600000");
+        //sparkConf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer");
+        //sparkConf.set("spark.kryoserializer.buffer.max", "512m");
+        sparkConf.set("spark.executor.extraJavaOptions", "-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/home/agittarius/");
+        //sparkConf.set("spark.scheduler.mode", "FAIR");
+        //sparkConf.set("spark.executor.cores", "4");
+        sparkConf.set("spark.cores.max", "20");
         //sparkConf.set("spark.driver.maxResultSize", "20g");
-        SagittariusClient client = new SagittariusClient(cluster, sparkConf);
+        //sparkConf.set("spark.driver.memory", "20g");
+        sparkConf.set("spark.executor.memory", "1g");
+        SagittariusClient client = new SagittariusClient(cluster, sparkConf, 10000, 3000, Integer.parseInt(args[2]));
         Writer writer = client.getWriter();
         SagittariusReader reader = (SagittariusReader)client.getReader();
-        //reader.test();
-        floatRead(reader);
-        logger.info("consume time: " + (System.currentTimeMillis() - time) + "ms");
+        ReadTask task1 = new ReadTask(reader, time, "value >= 33 and value <= 34");
+        ReadTask task2 = new ReadTask(reader, time, "value >= 34 and value <= 35");
+        ReadTask task3 = new ReadTask(reader, time, "value >= 35 and value <= 36");
+        //batchTest(writer, Integer.parseInt(args[0]), Integer.parseInt(args[1]));
+        //batchTest1(client, Integer.parseInt(args[0]), Integer.parseInt(args[1]));
+        //insert(writer);
+        //task1.start();
+        //task2.start();
+        //task3.start();
+        //test(client.getSparkContext());
+        //floatRead(reader);
+        //insert(writer);
+        //TestTask testTask = new TestTask(reader);
+        //testTask.start();
+        //floatRead(reader);
+        //logger.info("consume time: " + (System.currentTimeMillis() - time) + "ms");
         //registerHostMetricInfo(writer);
         //registerHostTags(writer);
         //registerOwnerInfo(writer);
@@ -65,16 +87,104 @@ public class Example {
 
     }
 
+    public static void test(JavaSparkContext sparkContext) {
+        long time = System.currentTimeMillis();
+        /*Map<String, String> map = new HashMap<>();
+        map.put("keyspace", "sagittarius");
+        map.put("table", "data_float");
+        SQLContext sqlContext = new SQLContext(sparkContext);
+        Dataset<Row> dataset = sqlContext.read().format("org.apache.spark.sql.cassandra").options(map).load().filter("value >= 33 and value <= 34");
+
+        //dataset.filter(dataset.apply("value").$greater(33));
+        //dataset.apply("").
+        //dataset = dataset.filter("value >= 33 and value <= 34");
+        //dataset = dataset.selectExpr("host");
+        dataset.explain();
+        System.out.println(dataset.count());
+
+        System.out.println("consume time :" + (System.currentTimeMillis() - time));*/
+        CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_float");
+        //JavaRDD<CassandraRow> rdd1 = rdd.filter(r -> r.getFloat("value") >= 33 && r.getFloat("value") <= 34);
+        rdd.collect();
+
+        System.out.println("consume time :" + (System.currentTimeMillis() - time) + " ");
+    }
+
     private static void floatRead(Reader reader){
         ArrayList<String> hosts = new ArrayList<>();
         hosts.add("128998");
         ArrayList<String> metrics = new ArrayList<>();
         metrics.add("发动机转速");
-        long start = LocalDateTime.of(2017,2,26,0,0).toEpochSecond(TimeUtil.zoneOffset)*1000;
+        long start = LocalDateTime.of(2017,2,20,0,0).toEpochSecond(TimeUtil.zoneOffset)*1000;
         long end = LocalDateTime.of(2017,2,27,23,59).toEpochSecond(TimeUtil.zoneOffset)*1000;
         String filter = "value >= 33 and value <= 34";
         Map<String, Map<String, List<FloatPoint>>> result = reader.getFloatRange(hosts, metrics, start, end, filter);
         System.out.println(result.get("128998").get("发动机转速").size());
+    }
+
+    private static void batchTest1(SagittariusClient client, int threads, int runTime) {
+        List<String> hosts = new ArrayList<>();
+        for (int i = 0; i < threads; ++i) {
+            hosts.add("12828" + i);
+        }
+        List<BatchTest> tasks = new ArrayList<>();
+        for (String host : hosts) {
+            BatchTest task = new BatchTest(client.getWriter(), host, runTime);
+            task.start();
+            tasks.add(task);
+        }
+
+        long start = System.currentTimeMillis();
+        long count = 0;
+        long consume;
+        while (true) {
+            try {
+                Thread.sleep(180000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+
+            for (BatchTest task : tasks) {
+                count += task.getCount();
+            }
+            consume = System.currentTimeMillis() - start;
+            double throughput = count / ((double) consume / 1000);
+
+            logger.info("throughput: " + throughput + ", count: " + count);
+            count = 0;
+        }
+    }
+
+    private static void batchTest(Writer writer, int threads, int runTime) {
+        List<String> hosts = new ArrayList<>();
+        for (int i = 0; i < threads; ++i) {
+            hosts.add("12828" + i);
+        }
+        List<BatchTest> tasks = new ArrayList<>();
+        for (String host : hosts) {
+            BatchTest task = new BatchTest(writer, host, runTime);
+            task.start();
+            tasks.add(task);
+        }
+
+        long start = System.currentTimeMillis();
+        long count = 0;
+        long consume;
+        while (true) {
+            try {
+                Thread.sleep(180000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+
+            for (BatchTest task : tasks) {
+                count += task.getCount();
+            }
+            consume = System.currentTimeMillis() - start;
+            double throughput = count / ((double) consume / 1000);
+            count = 0;
+            logger.info("throughput: " + throughput + ", count: " + count);
+        }
     }
 
     private static void batchWriteTest(Writer writer, int threads, int runTime, int batchSize) {
@@ -228,8 +338,22 @@ public class Example {
         long time2 = System.currentTimeMillis();
         System.out.println(time1);
         System.out.println(time2);
-        writer.insert("128280", "APP", time1, -1, TimePartition.DAY, 5.20d);
-
+        //for (int i = 0; i < 3000; ++i) {
+            writer.insert("128280", "APP", time1, -1, TimePartition.DAY, 10l);
+            ++time1;
+        //}
+        logger.info("" + (System.currentTimeMillis() - time1));
+        /*long start = System.currentTimeMillis();
+        SagittariusWriter sWriter = (SagittariusWriter)writer;
+        SagittariusWriter.Datas datas = sWriter.newDatas();
+        long time = System.currentTimeMillis();
+        Random random = new Random();
+        for (int i = 0; i < 3000; ++i) {
+            datas.addData("128280", "APP", time, time, TimePartition.DAY, random.nextDouble() * 100);
+            ++time;
+        }
+        sWriter.bulkInsert(datas);
+        logger.info(" " + (System.currentTimeMillis() - start));*/
     }
 
     private static void registerHostMetricInfo(Writer writer) {

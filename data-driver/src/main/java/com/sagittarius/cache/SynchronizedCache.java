@@ -1,9 +1,7 @@
 package com.sagittarius.cache;
 
 /**
- * Wrapper for caches that adds simple synchronization to provide a thread-safe cache. Note that this simply adds
- * synchronization around each cache method on the underlying unsynchronized cache. It does not add any support for
- * atomically checking for existence of an entry and computing and inserting the value if it is missing.
+ * Wrapper for caches that adds simple synchronization to provide a thread-safe cache.
  */
 public class SynchronizedCache<K, V> implements Cache<K, V> {
     private final Cache<K, V> underlying;
