@@ -38,7 +38,7 @@ public interface Reader {
      * @param time    query time
      * @return map of IntPoints at the query time, the key is  host name, the value is list of IntPoints related to that host
      */
-    Map<String, Map<String, List<IntPoint>>> getIntPoint(List<String> hosts, List<String> metrics, long time);
+    Map<String, Map<String, IntPoint>> getIntPoint(List<String> hosts, List<String> metrics, long time);
 
     /**
      * given hosts list and metrics list,each host is associated with the same list of metrics , get LongPoints at the query time.
@@ -48,7 +48,7 @@ public interface Reader {
      * @param time    query time
      * @return map of LongPoints at the query time, the key is  host name, the value is list of LongPoints related to that host
      */
-    Map<String, Map<String, List<LongPoint>>> getLongPoint(List<String> hosts, List<String> metrics, long time);
+    Map<String, Map<String, LongPoint>> getLongPoint(List<String> hosts, List<String> metrics, long time);
 
     /**
      * given hosts list and metrics list,each host is associated with the same list of metrics , get FloatPoints at the query time.
@@ -58,7 +58,7 @@ public interface Reader {
      * @param time    query time
      * @return map of FloatPoints at the query time, the key is  host name, the value is list of FloatPoints related to that host
      */
-    Map<String, Map<String, List<FloatPoint>>> getFloatPoint(List<String> hosts, List<String> metrics, long time);
+    Map<String, Map<String, FloatPoint>> getFloatPoint(List<String> hosts, List<String> metrics, long time);
 
     /**
      * given hosts list and metrics list,each host is associated with the same list of metrics , get DoublePoints at the query time.
@@ -68,7 +68,7 @@ public interface Reader {
      * @param time    query time
      * @return map of DoublePoints at the query time, the key is  host name, the value is list of DoublePoints related to that host
      */
-    Map<String, Map<String, List<DoublePoint>>> getDoublePoint(List<String> hosts, List<String> metrics, long time);
+    Map<String, Map<String, DoublePoint>> getDoublePoint(List<String> hosts, List<String> metrics, long time);
 
     /**
      * given hosts list and metrics list,each host is associated with the same list of metrics , get BooleanPoints at the query time.
@@ -78,7 +78,7 @@ public interface Reader {
      * @param time    query time
      * @return map of BooleanPoints at the query time, the key is  host name, the value is list of BooleanPoints related to that host
      */
-    Map<String, Map<String, List<BooleanPoint>>> getBooleanPoint(List<String> hosts, List<String> metrics, long time);
+    Map<String, Map<String, BooleanPoint>> getBooleanPoint(List<String> hosts, List<String> metrics, long time);
 
     /**
      * given hosts list and metrics list,each host is associated with the same list of metrics , get StringPoints at the query time.
@@ -88,7 +88,7 @@ public interface Reader {
      * @param time    query time
      * @return map of StringPoints at the query time, the key is  host name, the value is list of StringPoints related to that host
      */
-    Map<String, Map<String, List<StringPoint>>> getStringPoint(List<String> hosts, List<String> metrics, long time);
+    Map<String, Map<String, StringPoint>> getStringPoint(List<String> hosts, List<String> metrics, long time);
 
     /**
      * given hosts list and metrics list,each host is associated with the same list of metrics , get GeoPoints at the query time.
@@ -98,7 +98,7 @@ public interface Reader {
      * @param time    query time
      * @return map of GeoPoints at the query time, the key is  host name, the value is list of GeoPoints related to that host
      */
-    Map<String, Map<String, List<GeoPoint>>> getGeoPoint(List<String> hosts, List<String> metrics, long time);
+    Map<String, Map<String, GeoPoint>> getGeoPoint(List<String> hosts, List<String> metrics, long time);
 
     /**
      * given host and metric , get a IntPoint at the query time, if there isn't point at that time, will search point according to shift option.
