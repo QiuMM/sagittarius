@@ -151,5 +151,6 @@ public interface Writer {
      */
     void insert(String host, String metric, long primaryTime, long secondaryTime, TimePartition timePartition, float latitude, float longitude);
 
+    void insert(String host, String metric, long timeSlice, double maxValue, double minValue, double countValue, double sumValue);
 
 }

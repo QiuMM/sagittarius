@@ -242,6 +242,12 @@ public class SagittariusWriter implements Writer {
         }
     }
 
+    @Override
+    public void insert(String host, String metric, long timeSlice, double maxValue, double minValue, double countValue, double sumValue) {
+        Mapper<AggregationData> dataMapper = mappingManager.mapper(AggregationData.class);
+        dataMapper.save(new AggregationData(host, metric, timeSlice, maxValue, minValue, countValue, sumValue), timestamp(System.currentTimeMillis()), saveNullFields(false));
+    }
+
     public void bulkInsert(Data data) {
         Mapper<Latest> latestMapper = mappingManager.mapper(Latest.class);
         for (Map.Entry<HostMetricPair, Latest> entry : data.latestData.entrySet()) {
