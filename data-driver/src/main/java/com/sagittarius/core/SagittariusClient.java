@@ -27,8 +27,8 @@ public class SagittariusClient {
     private MappingManager mappingManager;
     private JavaSparkContext sparkContext;
     private Cache<HostMetricPair, TypePartitionPair> cache;
-    private int batchSize;
-    private int lingerMs;
+    private int batchSize; //if auto-batch, this define the batch size
+    private int lingerMs; // if auto-batch, this define the wait time before a batch to be send
     private boolean autoBatch;
 
     private SagittariusReader reader;

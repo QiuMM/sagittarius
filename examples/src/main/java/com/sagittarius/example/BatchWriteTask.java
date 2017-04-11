@@ -3,6 +3,8 @@ package com.sagittarius.example;
 import com.datastax.driver.core.exceptions.NoHostAvailableException;
 import com.datastax.driver.core.exceptions.WriteTimeoutException;
 import com.sagittarius.bean.common.TimePartition;
+import com.sagittarius.exceptions.QueryExecutionException;
+import com.sagittarius.exceptions.TimeoutException;
 import com.sagittarius.write.SagittariusWriter;
 import com.sagittarius.write.Writer;
 import org.slf4j.Logger;
@@ -51,7 +53,11 @@ public class BatchWriteTask extends Thread {
             }
             long startTime = System.currentTimeMillis();
             try {
-                writer.bulkInsert(data);
+                try {
+                    writer.bulkInsert(data);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
                 count += batchSize;
             } catch (NoHostAvailableException | WriteTimeoutException e) {
                 logger.info("Exception: ", e);

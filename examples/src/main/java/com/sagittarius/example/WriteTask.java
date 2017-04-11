@@ -3,6 +3,8 @@ package com.sagittarius.example;
 import com.datastax.driver.core.exceptions.NoHostAvailableException;
 import com.datastax.driver.core.exceptions.WriteTimeoutException;
 import com.sagittarius.bean.common.TimePartition;
+import com.sagittarius.exceptions.QueryExecutionException;
+import com.sagittarius.exceptions.TimeoutException;
 import com.sagittarius.write.Writer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,6 +54,12 @@ public class WriteTask extends Thread {
                 } catch (InterruptedException e1) {
                     e1.printStackTrace();
                 }
+            } catch (QueryExecutionException e) {
+                e.printStackTrace();
+            } catch (TimeoutException e) {
+                e.printStackTrace();
+            } catch (com.sagittarius.exceptions.NoHostAvailableException e) {
+                e.printStackTrace();
             }
             consumeTime += System.currentTimeMillis() - startTime;
             ++time;

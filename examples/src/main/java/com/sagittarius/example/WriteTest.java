@@ -151,7 +151,7 @@ public class WriteTest {
                                     consumeTime += System.currentTimeMillis() - startTime;
                                     count += batchSize;
                                     throughput = count / ((double) consumeTime / 1000);
-                                }catch (NoHostAvailableException | WriteTimeoutException e) {
+                                }catch (Exception e) {
                                     //logger.info(e.getMessage());
                                 }
                                 data = writer.newData();

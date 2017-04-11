@@ -10,6 +10,10 @@ import com.sagittarius.bean.query.Shift;
 import com.sagittarius.bean.result.DoublePoint;
 import com.sagittarius.bean.result.FloatPoint;
 import com.sagittarius.core.SagittariusClient;
+import com.sagittarius.exceptions.NoHostAvailableException;
+import com.sagittarius.exceptions.QueryExecutionException;
+import com.sagittarius.exceptions.SparkException;
+import com.sagittarius.exceptions.TimeoutException;
 import com.sagittarius.read.Reader;
 import com.sagittarius.read.SagittariusReader;
 import com.sagittarius.util.TimeUtil;
@@ -44,14 +48,14 @@ public class Example {
         sparkConf.set("spark.cassandra.connection.keep_alive_ms", "600000");
         //sparkConf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer");
         //sparkConf.set("spark.kryoserializer.buffer.max", "512m");
-        sparkConf.set("spark.executor.extraJavaOptions", "-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/home/agittarius/");
+        //sparkConf.set("spark.executor.extraJavaOptions", "-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/home/agittarius/");
         //sparkConf.set("spark.scheduler.mode", "FAIR");
         //sparkConf.set("spark.executor.cores", "4");
         sparkConf.set("spark.cores.max", "20");
         //sparkConf.set("spark.driver.maxResultSize", "20g");
         //sparkConf.set("spark.driver.memory", "20g");
-        sparkConf.set("spark.executor.memory", "1g");
-        SagittariusClient client = new SagittariusClient(cluster, sparkConf, 10000, 3000, Integer.parseInt(args[2]));
+        sparkConf.set("spark.executor.memory", "2g");
+        SagittariusClient client = new SagittariusClient(cluster, sparkConf, 10000);
         Writer writer = client.getWriter();
         SagittariusReader reader = (SagittariusReader)client.getReader();
         ReadTask task1 = new ReadTask(reader, time, "value >= 33 and value <= 34");
@@ -66,8 +70,8 @@ public class Example {
         //test(client.getSparkContext());
         //floatRead(reader);
         //insert(writer);
-        //TestTask testTask = new TestTask(reader);
-        //testTask.start();
+        TestTask testTask = new TestTask(reader);
+        testTask.start();
         //floatRead(reader);
         //logger.info("consume time: " + (System.currentTimeMillis() - time) + "ms");
         //registerHostMetricInfo(writer);
@@ -118,7 +122,12 @@ public class Example {
         long start = LocalDateTime.of(2017,2,20,0,0).toEpochSecond(TimeUtil.zoneOffset)*1000;
         long end = LocalDateTime.of(2017,2,27,23,59).toEpochSecond(TimeUtil.zoneOffset)*1000;
         String filter = "value >= 33 and value <= 34";
-        Map<String, Map<String, List<FloatPoint>>> result = reader.getFloatRange(hosts, metrics, start, end, filter);
+        Map<String, Map<String, List<FloatPoint>>> result = null;
+        try {
+            result = reader.getFloatRange(hosts, metrics, start, end, filter);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
         System.out.println(result.get("128998").get("发动机转速").size());
     }
 
@@ -271,12 +280,14 @@ public class Example {
         hosts.add("128290");
         List<String> metrics = new ArrayList<>();
         metrics.add("APP");
-        Map<String, List<DoublePoint>> result = reader.getDoublePoint(hosts, metrics, 1482319512851L);
-        for (Map.Entry<String, List<DoublePoint>> entry : result.entrySet()) {
-            System.out.println(entry.getKey());
-            for (DoublePoint point : entry.getValue()) {
-                System.out.println(point.getMetric() + " " + point.getPrimaryTime()+ " " + point.getValue());
-            }
+        Map<String, Map<String, DoublePoint>> result = null;
+        try {
+            result = reader.getDoublePoint(hosts, metrics, 1482319512851L);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        for (Map.Entry<String, Map<String, DoublePoint>> entry : result.entrySet()) {
+            //
         }
     }
     private static void readLatest(Reader reader) {
@@ -285,12 +296,14 @@ public class Example {
         hosts.add("128290");
         List<String> metrics = new ArrayList<>();
         metrics.add("APP");
-        Map<String, List<DoublePoint>> result = reader.getDoubleLatest(hosts, metrics);
-        for (Map.Entry<String, List<DoublePoint>> entry : result.entrySet()) {
-            System.out.println(entry.getKey());
-            for (DoublePoint point : entry.getValue()) {
-                System.out.println(point.getMetric() + " " + point.getPrimaryTime()+ " " + point.getValue());
-            }
+        Map<String, Map<String, DoublePoint>> result = null;
+        try {
+            result = reader.getDoubleLatest(hosts, metrics);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        for (Map.Entry<String, Map<String, DoublePoint>> entry : result.entrySet()) {
+            //
         }
     }
     private static void readbyRange(Reader reader) {
@@ -303,12 +316,14 @@ public class Example {
         metrics.add("APP");
         LocalDateTime start = LocalDateTime.of(1993,10,11,0,0);
         LocalDateTime end = LocalDateTime.of(1993,10,14,5,59);
-        Map<String, List<DoublePoint>> result = reader.getDoubleRange(hosts, metrics,start.toEpochSecond(TimeUtil.zoneOffset)*1000,end.toEpochSecond(TimeUtil.zoneOffset)*1000);
-        for (Map.Entry<String, List<DoublePoint>> entry : result.entrySet()) {
-            System.out.println(entry.getKey());
-            for (DoublePoint point : entry.getValue()) {
-                System.out.println(point.getMetric() + " " + point.getPrimaryTime()+" "+ LocalDateTime.ofEpochSecond(point.getPrimaryTime()/1000,0,TimeUtil.zoneOffset) + " " + point.getValue());
-            }
+        Map<String, Map<String, List<DoublePoint>>> result = null;
+        try {
+            result = reader.getDoubleRange(hosts, metrics,start.toEpochSecond(TimeUtil.zoneOffset)*1000,end.toEpochSecond(TimeUtil.zoneOffset)*1000);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        for (Map.Entry<String, Map<String, List<DoublePoint>>> entry : result.entrySet()) {
+            //
         }
     }
 
@@ -316,7 +331,12 @@ public class Example {
 
         String host="128280";
         String metric="APP";
-        DoublePoint point =  reader.getFuzzyDoublePoint(host,metric,1483712410000L, Shift.NEAREST);
+        DoublePoint point = null;
+        try {
+            point = reader.getFuzzyDoublePoint(host,metric,1483712410000L, Shift.NEAREST);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
         System.out.println(point.getMetric() + " " + point.getPrimaryTime() + " " + point.getValue());
 
     }
@@ -327,7 +347,11 @@ public class Example {
         System.out.println("插入");
         while (!start.isAfter(end)) {
             double value=Math.random()*100;
-            writer.insert("1282835", "APP", start.toEpochSecond(TimeUtil.zoneOffset)*1000, start.toEpochSecond(TimeUtil.zoneOffset)*1000, TimePartition.DAY,value );
+            try {
+                writer.insert("1282835", "APP", start.toEpochSecond(TimeUtil.zoneOffset)*1000, start.toEpochSecond(TimeUtil.zoneOffset)*1000, TimePartition.DAY,value );
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
             System.out.println("APP" + " " + start.toEpochSecond(TimeUtil.zoneOffset)*1000+" "+ start.toString()+ " " + value);
             start = start.plusHours(6);
         }
@@ -339,8 +363,12 @@ public class Example {
         System.out.println(time1);
         System.out.println(time2);
         //for (int i = 0; i < 3000; ++i) {
+        try {
             writer.insert("128280", "APP", time1, -1, TimePartition.DAY, 10l);
-            ++time1;
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        ++time1;
         //}
         logger.info("" + (System.currentTimeMillis() - time1));
         /*long start = System.currentTimeMillis();
@@ -368,7 +396,11 @@ public class Example {
         }
         for (String host : hosts) {
             long time = System.currentTimeMillis();
-            writer.registerHostMetricInfo(host, metricMetadatas);
+            try {
+                writer.registerHostMetricInfo(host, metricMetadatas);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
             logger.info("consume time: " + (System.currentTimeMillis() - time) + "ms");
         }
     }
@@ -376,6 +408,10 @@ public class Example {
     private static void registerHostTags(Writer writer) {
         Map<String, String> tags = new HashMap<>();
         tags.put("price", "¥.10000");
-        writer.registerHostTags("128280", tags);
+        try {
+            writer.registerHostTags("128280", tags);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 }

@@ -34,9 +34,9 @@ public class Sender implements Runnable {
             try {
                 int records = batch.batchStatement.size();
                 session.execute(batch.sendableStatement());
-                logger.debug("Insert {} records to database", records);
+                logger.debug("Auto-batch thread insert {} records to database", records);
             } catch (Exception e) {
-
+                logger.error("Auto-batch thread throws exception while insert records to database", e);
             }
         }
     }

@@ -1,6 +1,10 @@
 package com.sagittarius.example;
 
 import com.sagittarius.bean.result.FloatPoint;
+import com.sagittarius.exceptions.NoHostAvailableException;
+import com.sagittarius.exceptions.QueryExecutionException;
+import com.sagittarius.exceptions.SparkException;
+import com.sagittarius.exceptions.TimeoutException;
 import com.sagittarius.read.Reader;
 import com.sagittarius.util.TimeUtil;
 import org.slf4j.Logger;
@@ -36,7 +40,12 @@ public class ReadTask extends Thread {
         long start = LocalDateTime.of(2017,2,26,0,0).toEpochSecond(TimeUtil.zoneOffset)*1000;
         long end = LocalDateTime.of(2017,2,27,23,59).toEpochSecond(TimeUtil.zoneOffset)*1000;
 
-        Map<String, Map<String, List<FloatPoint>>> result = reader.getFloatRange(hosts, metrics, start, end, this.filter);
+        Map<String, Map<String, List<FloatPoint>>> result = null;
+        try {
+            result = reader.getFloatRange(hosts, metrics, start, end, this.filter);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
         System.out.println(result.get("128998").get("发动机转速").size());
         logger.info("consume time: " + (System.currentTimeMillis() - this.start) + "ms");
     }

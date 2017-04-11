@@ -4,6 +4,10 @@ import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Session;
 import com.datastax.driver.core.SimpleStatement;
 import com.datastax.driver.core.Statement;
+import com.datastax.driver.core.exceptions.NoHostAvailableException;
+import com.datastax.driver.core.exceptions.OperationTimedOutException;
+import com.datastax.driver.core.exceptions.QueryExecutionException;
+import com.datastax.driver.core.exceptions.ReadTimeoutException;
 import com.datastax.driver.mapping.Mapper;
 import com.datastax.driver.mapping.MappingManager;
 import com.datastax.driver.mapping.Result;
@@ -18,13 +22,13 @@ import com.sagittarius.bean.query.Shift;
 import com.sagittarius.bean.result.*;
 import com.sagittarius.bean.table.*;
 import com.sagittarius.cache.Cache;
+import com.sagittarius.exceptions.SparkException;
+import com.sagittarius.exceptions.TimeoutException;
 import com.sagittarius.read.internals.QueryStatement;
 import com.sagittarius.util.TimeUtil;
 import com.sagittarius.write.SagittariusWriter;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
-import org.apache.spark.util.SizeEstimator;
-import scala.Int;
 import scala.Tuple2;
 
 import java.io.FileWriter;
@@ -92,12 +96,12 @@ public class SagittariusReader implements Reader {
         Statement statement = new SimpleStatement(String.format(QueryStatement.HOST_METRICS_QUERY_STATEMENT, generateInStatement(queryHosts), generateInStatement(queryMetrics)));
         ResultSet rs = session.execute(statement);
         List<HostMetric> hostMetrics = mapper.map(rs).all();
+        result.addAll(hostMetrics);
         //update cache
         for (HostMetric hostMetric : hostMetrics) {
             cache.put(new HostMetricPair(hostMetric.getHost(), hostMetric.getMetric()), new TypePartitionPair(hostMetric.getTimePartition(), hostMetric.getValueType()));
         }
 
-        result.addAll(hostMetrics);
         return result;
     }
 
@@ -142,231 +146,308 @@ public class SagittariusReader implements Reader {
         String table = getTableByType(valueType);
         List<ResultSet> resultSets = new ArrayList<>();
         List<HostMetric> hostMetrics = getHostMetrics(hosts, metrics);
+
         Map<String, Map<String, Set<String>>> timeSliceHostMetric = getTimeSlicePartedHostMetrics(hostMetrics, time);
         for (Map.Entry<String, Map<String, Set<String>>> entry : timeSliceHostMetric.entrySet()) {
             SimpleStatement statement = new SimpleStatement(String.format(QueryStatement.POINT_QUERY_STATEMENT, table, generateInStatement(entry.getValue().get("hosts")), generateInStatement(entry.getValue().get("metrics")), entry.getKey(), time));
             ResultSet set = session.execute(statement);
             resultSets.add(set);
         }
+
         return resultSets;
     }
 
     @Override
-    public Map<ValueType, Map<String, Set<String>>> getValueType(List<String> hosts, List<String> metrics) {
+    public Map<ValueType, Map<String, Set<String>>> getValueType(List<String> hosts, List<String> metrics) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
         Map<ValueType, Map<String, Set<String>>> result = new HashMap<>();
-        List<HostMetric> hostMetrics = getHostMetrics(hosts, metrics);
 
-        for (HostMetric hostMetric : hostMetrics) {
-            ValueType type = hostMetric.getValueType();
-            if (result.containsKey(type)) {
-                Map<String, Set<String>> setMap = result.get(type);
-                setMap.get("hosts").add(hostMetric.getHost());
-                setMap.get("metrics").add(hostMetric.getMetric());
+        try {
+            List<HostMetric> hostMetrics = getHostMetrics(hosts, metrics);
+            for (HostMetric hostMetric : hostMetrics) {
+                ValueType type = hostMetric.getValueType();
+                if (result.containsKey(type)) {
+                    Map<String, Set<String>> setMap = result.get(type);
+                    setMap.get("hosts").add(hostMetric.getHost());
+                    setMap.get("metrics").add(hostMetric.getMetric());
+                } else {
+                    Map<String, Set<String>> setMap = new HashMap<>();
+                    Set<String> hostSet = new HashSet<>();
+                    Set<String> metricSet = new HashSet<>();
+                    hostSet.add(hostMetric.getHost());
+                    metricSet.add(hostMetric.getMetric());
+                    setMap.put("hosts", hostSet);
+                    setMap.put("metrics", metricSet);
+                    result.put(type, setMap);
+                }
+            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+        }
+
+        return result.size() != 0 ? result : null;
+    }
+
+    @Override
+    public ValueType getValueType(String host, String metric) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
+        try {
+            List<String> hosts = new ArrayList<>(), metrics = new ArrayList<>();
+            hosts.add(host);
+            metrics.add(metric);
+            List<HostMetric> hostMetrics = getHostMetrics(hosts, metrics);
+            if (hostMetrics.size() == 0) {
+                return null;
             } else {
-                Map<String, Set<String>> setMap = new HashMap<>();
-                Set<String> hostSet = new HashSet<>();
-                Set<String> metricSet = new HashSet<>();
-                hostSet.add(hostMetric.getHost());
-                metricSet.add(hostMetric.getMetric());
-                setMap.put("hosts", hostSet);
-                setMap.put("metrics", metricSet);
-                result.put(type, setMap);
+                return hostMetrics.get(0).getValueType();
             }
-
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
-
-        return result;
     }
 
     @Override
-    public ValueType getValueType(String host, String metric) {
-        List<String> hosts = new ArrayList<>(), metrics = new ArrayList<>();
-        hosts.add(host);
-        metrics.add(metric);
-        List<HostMetric> hostMetrics = getHostMetrics(hosts, metrics);
-        return hostMetrics.get(0).getValueType();
-    }
-
-    @Override
-    public Map<String, Map<String, IntPoint>> getIntPoint(List<String> hosts, List<String> metrics, long time) {
-        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.INT);
-        List<IntData> datas = new ArrayList<>();
-        Mapper<IntData> mapper = mappingManager.mapper(IntData.class);
-        for (ResultSet rs : resultSets) {
-            datas.addAll(mapper.map(rs).all());
-        }
-
+    public Map<String, Map<String, IntPoint>> getIntPoint(List<String> hosts, List<String> metrics, long time) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
         Map<String, Map<String, IntPoint>> result = new HashMap<>();
-        for (IntData data : datas) {
-            String host = data.getHost();
-            String metric = data.getMetric();
-            if(result.containsKey(host)){
-                result.get(host).put(metric, new IntPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+
+        try {
+            List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.INT);
+            List<IntData> datas = new ArrayList<>();
+            Mapper<IntData> mapper = mappingManager.mapper(IntData.class);
+            for (ResultSet rs : resultSets) {
+                datas.addAll(mapper.map(rs).all());
             }
-            else {
-                Map<String, IntPoint> metricMap = new HashMap<>();
-                metricMap.put(metric, new IntPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                result.put(host, metricMap);
+
+            for (IntData data : datas) {
+                String host = data.getHost();
+                String metric = data.getMetric();
+                if (result.containsKey(host)) {
+                    result.get(host).put(metric, new IntPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                } else {
+                    Map<String, IntPoint> metricMap = new HashMap<>();
+                    metricMap.put(metric, new IntPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                    result.put(host, metricMap);
+                }
             }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, LongPoint>> getLongPoint(List<String> hosts, List<String> metrics, long time) {
-        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.LONG);
-        List<LongData> datas = new ArrayList<>();
-        Mapper<LongData> mapper = mappingManager.mapper(LongData.class);
-        for (ResultSet rs : resultSets) {
-            datas.addAll(mapper.map(rs).all());
-        }
-
+    public Map<String, Map<String, LongPoint>> getLongPoint(List<String> hosts, List<String> metrics, long time) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
         Map<String, Map<String, LongPoint>> result = new HashMap<>();
-        for (LongData data : datas) {
-            String host = data.getHost();
-            String metric = data.getMetric();
-            if(result.containsKey(host)){
-                result.get(host).put(metric, new LongPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+
+        try {
+            List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.LONG);
+            List<LongData> datas = new ArrayList<>();
+            Mapper<LongData> mapper = mappingManager.mapper(LongData.class);
+            for (ResultSet rs : resultSets) {
+                datas.addAll(mapper.map(rs).all());
             }
-            else {
-                Map<String, LongPoint> metricMap = new HashMap<>();
-                metricMap.put(metric, new LongPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                result.put(host, metricMap);
+
+            for (LongData data : datas) {
+                String host = data.getHost();
+                String metric = data.getMetric();
+                if (result.containsKey(host)) {
+                    result.get(host).put(metric, new LongPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                } else {
+                    Map<String, LongPoint> metricMap = new HashMap<>();
+                    metricMap.put(metric, new LongPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                    result.put(host, metricMap);
+                }
             }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, FloatPoint>> getFloatPoint(List<String> hosts, List<String> metrics, long time) {
-        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.FLOAT);
-        List<FloatData> datas = new ArrayList<>();
-        Mapper<FloatData> mapper = mappingManager.mapper(FloatData.class);
-        for (ResultSet rs : resultSets) {
-            datas.addAll(mapper.map(rs).all());
-        }
-
+    public Map<String, Map<String, FloatPoint>> getFloatPoint(List<String> hosts, List<String> metrics, long time) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
         Map<String, Map<String, FloatPoint>> result = new HashMap<>();
-        for (FloatData data : datas) {
-            String host = data.getHost();
-            String metric = data.getMetric();
-            if(result.containsKey(host)){
-                result.get(host).put(metric, new FloatPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+
+        try {
+            List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.FLOAT);
+            List<FloatData> datas = new ArrayList<>();
+            Mapper<FloatData> mapper = mappingManager.mapper(FloatData.class);
+            for (ResultSet rs : resultSets) {
+                datas.addAll(mapper.map(rs).all());
             }
-            else {
-                Map<String, FloatPoint> metricMap = new HashMap<>();
-                metricMap.put(metric, new FloatPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                result.put(host, metricMap);
+
+            for (FloatData data : datas) {
+                String host = data.getHost();
+                String metric = data.getMetric();
+                if (result.containsKey(host)) {
+                    result.get(host).put(metric, new FloatPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                } else {
+                    Map<String, FloatPoint> metricMap = new HashMap<>();
+                    metricMap.put(metric, new FloatPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                    result.put(host, metricMap);
+                }
             }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, DoublePoint>> getDoublePoint(List<String> hosts, List<String> metrics, long time) {
-        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.DOUBLE);
-        List<DoubleData> datas = new ArrayList<>();
-        Mapper<DoubleData> mapper = mappingManager.mapper(DoubleData.class);
-        for (ResultSet rs : resultSets) {
-            datas.addAll(mapper.map(rs).all());
-        }
-
+    public Map<String, Map<String, DoublePoint>> getDoublePoint(List<String> hosts, List<String> metrics, long time) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
         Map<String, Map<String, DoublePoint>> result = new HashMap<>();
-        for (DoubleData data : datas) {
-            String host = data.getHost();
-            String metric = data.getMetric();
-            if(result.containsKey(host)){
-                result.get(host).put(metric, new DoublePoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+
+        try {
+            List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.DOUBLE);
+            List<DoubleData> datas = new ArrayList<>();
+            Mapper<DoubleData> mapper = mappingManager.mapper(DoubleData.class);
+            for (ResultSet rs : resultSets) {
+                datas.addAll(mapper.map(rs).all());
             }
-            else {
-                Map<String, DoublePoint> metricMap = new HashMap<>();
-                metricMap.put(metric, new DoublePoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                result.put(host, metricMap);
+
+            for (DoubleData data : datas) {
+                String host = data.getHost();
+                String metric = data.getMetric();
+                if (result.containsKey(host)) {
+                    result.get(host).put(metric, new DoublePoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                } else {
+                    Map<String, DoublePoint> metricMap = new HashMap<>();
+                    metricMap.put(metric, new DoublePoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                    result.put(host, metricMap);
+                }
             }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, BooleanPoint>> getBooleanPoint(List<String> hosts, List<String> metrics, long time) {
-        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.BOOLEAN);
-        List<BooleanData> datas = new ArrayList<>();
-        Mapper<BooleanData> mapper = mappingManager.mapper(BooleanData.class);
-        for (ResultSet rs : resultSets) {
-            datas.addAll(mapper.map(rs).all());
-        }
-
+    public Map<String, Map<String, BooleanPoint>> getBooleanPoint(List<String> hosts, List<String> metrics, long time) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
         Map<String, Map<String, BooleanPoint>> result = new HashMap<>();
-        for (BooleanData data : datas) {
-            String host = data.getHost();
-            String metric = data.getMetric();
-            if(result.containsKey(host)){
-                result.get(host).put(metric, new BooleanPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+
+        try {
+            List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.BOOLEAN);
+            List<BooleanData> datas = new ArrayList<>();
+            Mapper<BooleanData> mapper = mappingManager.mapper(BooleanData.class);
+            for (ResultSet rs : resultSets) {
+                datas.addAll(mapper.map(rs).all());
             }
-            else {
-                Map<String, BooleanPoint> metricMap = new HashMap<>();
-                metricMap.put(metric, new BooleanPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                result.put(host, metricMap);
+
+            for (BooleanData data : datas) {
+                String host = data.getHost();
+                String metric = data.getMetric();
+                if (result.containsKey(host)) {
+                    result.get(host).put(metric, new BooleanPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                } else {
+                    Map<String, BooleanPoint> metricMap = new HashMap<>();
+                    metricMap.put(metric, new BooleanPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                    result.put(host, metricMap);
+                }
             }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, StringPoint>> getStringPoint(List<String> hosts, List<String> metrics, long time) {
-        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.STRING);
-        List<StringData> datas = new ArrayList<>();
-        Mapper<StringData> mapper = mappingManager.mapper(StringData.class);
-        for (ResultSet rs : resultSets) {
-            datas.addAll(mapper.map(rs).all());
-        }
-
+    public Map<String, Map<String, StringPoint>> getStringPoint(List<String> hosts, List<String> metrics, long time) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
         Map<String, Map<String, StringPoint>> result = new HashMap<>();
-        for (StringData data : datas) {
-            String host = data.getHost();
-            String metric = data.getMetric();
-            if(result.containsKey(host)){
-                result.get(host).put(metric, new StringPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+
+        try {
+            List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.STRING);
+            List<StringData> datas = new ArrayList<>();
+            Mapper<StringData> mapper = mappingManager.mapper(StringData.class);
+            for (ResultSet rs : resultSets) {
+                datas.addAll(mapper.map(rs).all());
             }
-            else {
-                Map<String, StringPoint> metricMap = new HashMap<>();
-                metricMap.put(metric, new StringPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                result.put(host, metricMap);
+
+            for (StringData data : datas) {
+                String host = data.getHost();
+                String metric = data.getMetric();
+                if (result.containsKey(host)) {
+                    result.get(host).put(metric, new StringPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                } else {
+                    Map<String, StringPoint> metricMap = new HashMap<>();
+                    metricMap.put(metric, new StringPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                    result.put(host, metricMap);
+                }
             }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, GeoPoint>> getGeoPoint(List<String> hosts, List<String> metrics, long time) {
-        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.GEO);
-        List<GeoData> datas = new ArrayList<>();
-        Mapper<GeoData> mapper = mappingManager.mapper(GeoData.class);
-        for (ResultSet rs : resultSets) {
-            datas.addAll(mapper.map(rs).all());
-        }
-
+    public Map<String, Map<String, GeoPoint>> getGeoPoint(List<String> hosts, List<String> metrics, long time) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
         Map<String, Map<String, GeoPoint>> result = new HashMap<>();
-        for (GeoData data : datas) {
-            String host = data.getHost();
-            String metric = data.getMetric();
-            if(result.containsKey(host)){
-                result.get(host).put(metric, new GeoPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
+
+        try {
+            List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.GEO);
+            List<GeoData> datas = new ArrayList<>();
+            Mapper<GeoData> mapper = mappingManager.mapper(GeoData.class);
+            for (ResultSet rs : resultSets) {
+                datas.addAll(mapper.map(rs).all());
             }
-            else {
-                Map<String, GeoPoint> metricMap = new HashMap<>();
-                metricMap.put(metric, new GeoPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
-                result.put(host, metricMap);
+
+            for (GeoData data : datas) {
+                String host = data.getHost();
+                String metric = data.getMetric();
+                if (result.containsKey(host)) {
+                    result.get(host).put(metric, new GeoPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
+                } else {
+                    Map<String, GeoPoint> metricMap = new HashMap<>();
+                    metricMap.put(metric, new GeoPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
+                    result.put(host, metricMap);
+                }
             }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     private List<ResultSet> getPointResultSet(String host, String metric, long time, ValueType valueType, Shift shift) {
@@ -408,127 +489,198 @@ public class SagittariusReader implements Reader {
 
         statement = new SimpleStatement(String.format(queryStatement, table, host, metric, timeSlice, time));
         ResultSet set = session.execute(statement);
-        resultSets.add(set);
+        if (!set.isExhausted())
+            resultSets.add(set);
 
         return resultSets;
     }
 
     @Override
-    public IntPoint getFuzzyIntPoint(String hosts, String metrics, long time, Shift shift) {
-        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.INT, shift);
-        Mapper<IntData> mapper = mappingManager.mapper(IntData.class);
-        if (resultSets.size() == 1) {
-            IntData data = mapper.map(resultSets.get(0)).one();
-            return new IntPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue());
-        } else {
-            IntData dataBefore = mapper.map(resultSets.get(0)).one();
-            IntData dataAfter = mapper.map(resultSets.get(1)).one();
-            if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
-                return new IntPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.secondaryTimeUnboxed(), dataAfter.getValue());
-            else
-                return new IntPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.secondaryTimeUnboxed(), dataBefore.getValue());
+    public IntPoint getFuzzyIntPoint(String hosts, String metrics, long time, Shift shift) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
+        try {
+            List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.INT, shift);
+            Mapper<IntData> mapper = mappingManager.mapper(IntData.class);
+            if (resultSets.size() == 0) {
+                return null;
+            } else if (resultSets.size() == 1) {
+                IntData data = mapper.map(resultSets.get(0)).one();
+                return new IntPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue());
+            } else {
+                IntData dataBefore = mapper.map(resultSets.get(0)).one();
+                IntData dataAfter = mapper.map(resultSets.get(1)).one();
+                if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
+                    return new IntPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.secondaryTimeUnboxed(), dataAfter.getValue());
+                else
+                    return new IntPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.secondaryTimeUnboxed(), dataBefore.getValue());
+            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
     }
 
     @Override
-    public LongPoint getFuzzyLongPoint(String hosts, String metrics, long time, Shift shift) {
-        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.LONG, shift);
-        Mapper<LongData> mapper = mappingManager.mapper(LongData.class);
-        if (resultSets.size() == 1) {
-            LongData data = mapper.map(resultSets.get(0)).one();
-            return new LongPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue());
-        } else {
-            LongData dataBefore = mapper.map(resultSets.get(0)).one();
-            LongData dataAfter = mapper.map(resultSets.get(1)).one();
-            if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
-                return new LongPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.secondaryTimeUnboxed(), dataAfter.getValue());
-            else
-                return new LongPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.secondaryTimeUnboxed(), dataBefore.getValue());
+    public LongPoint getFuzzyLongPoint(String hosts, String metrics, long time, Shift shift) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
+        try {
+            List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.LONG, shift);
+            Mapper<LongData> mapper = mappingManager.mapper(LongData.class);
+            if (resultSets.size() == 0) {
+                return null;
+            } else if (resultSets.size() == 1) {
+                LongData data = mapper.map(resultSets.get(0)).one();
+                return new LongPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue());
+            } else {
+                LongData dataBefore = mapper.map(resultSets.get(0)).one();
+                LongData dataAfter = mapper.map(resultSets.get(1)).one();
+                if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
+                    return new LongPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.secondaryTimeUnboxed(), dataAfter.getValue());
+                else
+                    return new LongPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.secondaryTimeUnboxed(), dataBefore.getValue());
+            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
     }
 
     @Override
-    public FloatPoint getFuzzyFloatPoint(String hosts, String metrics, long time, Shift shift) {
-        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.FLOAT, shift);
-        Mapper<FloatData> mapper = mappingManager.mapper(FloatData.class);
-        if (resultSets.size() == 1) {
-            FloatData data = mapper.map(resultSets.get(0)).one();
-            return new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue());
-        } else {
-            FloatData dataBefore = mapper.map(resultSets.get(0)).one();
-            FloatData dataAfter = mapper.map(resultSets.get(1)).one();
-            if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
-                return new FloatPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.secondaryTimeUnboxed(), dataAfter.getValue());
-            else
-                return new FloatPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.secondaryTimeUnboxed(), dataBefore.getValue());
+    public FloatPoint getFuzzyFloatPoint(String hosts, String metrics, long time, Shift shift) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
+        try {
+            List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.FLOAT, shift);
+            Mapper<FloatData> mapper = mappingManager.mapper(FloatData.class);
+            if (resultSets.size() == 0) {
+                return null;
+            } else if (resultSets.size() == 1) {
+                FloatData data = mapper.map(resultSets.get(0)).one();
+                return new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue());
+            } else {
+                FloatData dataBefore = mapper.map(resultSets.get(0)).one();
+                FloatData dataAfter = mapper.map(resultSets.get(1)).one();
+                if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
+                    return new FloatPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.secondaryTimeUnboxed(), dataAfter.getValue());
+                else
+                    return new FloatPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.secondaryTimeUnboxed(), dataBefore.getValue());
+            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
     }
 
     @Override
-    public DoublePoint getFuzzyDoublePoint(String hosts, String metrics, long time, Shift shift) {
-        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.DOUBLE, shift);
-        Mapper<DoubleData> mapper = mappingManager.mapper(DoubleData.class);
-        if (resultSets.size() == 1) {
-            DoubleData data = mapper.map(resultSets.get(0)).one();
-            return new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue());
-        } else {
-            DoubleData dataBefore = mapper.map(resultSets.get(0)).one();
-            DoubleData dataAfter = mapper.map(resultSets.get(1)).one();
-            if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
-                return new DoublePoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.secondaryTimeUnboxed(), dataAfter.getValue());
-            else
-                return new DoublePoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.secondaryTimeUnboxed(), dataBefore.getValue());
+    public DoublePoint getFuzzyDoublePoint(String hosts, String metrics, long time, Shift shift) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
+        try {
+            List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.DOUBLE, shift);
+            Mapper<DoubleData> mapper = mappingManager.mapper(DoubleData.class);
+            if (resultSets.size() == 0) {
+                return null;
+            } else if (resultSets.size() == 1) {
+                DoubleData data = mapper.map(resultSets.get(0)).one();
+                return new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue());
+            } else {
+                DoubleData dataBefore = mapper.map(resultSets.get(0)).one();
+                DoubleData dataAfter = mapper.map(resultSets.get(1)).one();
+                if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
+                    return new DoublePoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.secondaryTimeUnboxed(), dataAfter.getValue());
+                else
+                    return new DoublePoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.secondaryTimeUnboxed(), dataBefore.getValue());
+            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
     }
 
     @Override
-    public BooleanPoint getFuzzyBooleanPoint(String hosts, String metrics, long time, Shift shift) {
-        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.BOOLEAN, shift);
-        Mapper<BooleanData> mapper = mappingManager.mapper(BooleanData.class);
-        if (resultSets.size() == 1) {
-            BooleanData data = mapper.map(resultSets.get(0)).one();
-            return new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue());
-        } else {
-            BooleanData dataBefore = mapper.map(resultSets.get(0)).one();
-            BooleanData dataAfter = mapper.map(resultSets.get(1)).one();
-            if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
-                return new BooleanPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.secondaryTimeUnboxed(), dataAfter.getValue());
-            else
-                return new BooleanPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.secondaryTimeUnboxed(), dataBefore.getValue());
+    public BooleanPoint getFuzzyBooleanPoint(String hosts, String metrics, long time, Shift shift) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
+        try {
+            List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.BOOLEAN, shift);
+            Mapper<BooleanData> mapper = mappingManager.mapper(BooleanData.class);
+            if (resultSets.size() == 0) {
+                return null;
+            } else if (resultSets.size() == 1) {
+                BooleanData data = mapper.map(resultSets.get(0)).one();
+                return new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue());
+            } else {
+                BooleanData dataBefore = mapper.map(resultSets.get(0)).one();
+                BooleanData dataAfter = mapper.map(resultSets.get(1)).one();
+                if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
+                    return new BooleanPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.secondaryTimeUnboxed(), dataAfter.getValue());
+                else
+                    return new BooleanPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.secondaryTimeUnboxed(), dataBefore.getValue());
+            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
     }
 
     @Override
-    public StringPoint getFuzzyStringPoint(String hosts, String metrics, long time, Shift shift) {
-        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.STRING, shift);
-        Mapper<StringData> mapper = mappingManager.mapper(StringData.class);
-        if (resultSets.size() == 1) {
-            StringData data = mapper.map(resultSets.get(0)).one();
-            return new StringPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue());
-        } else {
-            StringData dataBefore = mapper.map(resultSets.get(0)).one();
-            StringData dataAfter = mapper.map(resultSets.get(1)).one();
-            if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
-                return new StringPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.secondaryTimeUnboxed(), dataAfter.getValue());
-            else
-                return new StringPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.secondaryTimeUnboxed(), dataBefore.getValue());
+    public StringPoint getFuzzyStringPoint(String hosts, String metrics, long time, Shift shift) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
+        try {
+            List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.STRING, shift);
+            Mapper<StringData> mapper = mappingManager.mapper(StringData.class);
+            if (resultSets.size() == 0) {
+                return null;
+            } else if (resultSets.size() == 1) {
+                StringData data = mapper.map(resultSets.get(0)).one();
+                return new StringPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue());
+            } else {
+                StringData dataBefore = mapper.map(resultSets.get(0)).one();
+                StringData dataAfter = mapper.map(resultSets.get(1)).one();
+                if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
+                    return new StringPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.secondaryTimeUnboxed(), dataAfter.getValue());
+                else
+                    return new StringPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.secondaryTimeUnboxed(), dataBefore.getValue());
+            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
     }
 
     @Override
-    public GeoPoint getFuzzyGeoPoint(String hosts, String metrics, long time, Shift shift) {
-        List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.GEO, shift);
-        Mapper<GeoData> mapper = mappingManager.mapper(GeoData.class);
-        if (resultSets.size() == 1) {
-            GeoData data = mapper.map(resultSets.get(0)).one();
-            return new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude());
-        } else {
-            GeoData dataBefore = mapper.map(resultSets.get(0)).one();
-            GeoData dataAfter = mapper.map(resultSets.get(1)).one();
-            if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
-                return new GeoPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.secondaryTimeUnboxed(), dataAfter.getLatitude(), dataAfter.getLongitude());
-            else
-                return new GeoPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.secondaryTimeUnboxed(), dataBefore.getLatitude(), dataBefore.getLongitude());
+    public GeoPoint getFuzzyGeoPoint(String hosts, String metrics, long time, Shift shift) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
+        try {
+            List<ResultSet> resultSets = getPointResultSet(hosts, metrics, time, ValueType.GEO, shift);
+            Mapper<GeoData> mapper = mappingManager.mapper(GeoData.class);
+            if (resultSets.size() == 0) {
+                return null;
+            } else if (resultSets.size() == 1) {
+                GeoData data = mapper.map(resultSets.get(0)).one();
+                return new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude());
+            } else {
+                GeoData dataBefore = mapper.map(resultSets.get(0)).one();
+                GeoData dataAfter = mapper.map(resultSets.get(1)).one();
+                if (time - dataBefore.getPrimaryTime() >= dataAfter.getPrimaryTime() - time)
+                    return new GeoPoint(dataAfter.getMetric(), dataAfter.getPrimaryTime(), dataAfter.secondaryTimeUnboxed(), dataAfter.getLatitude(), dataAfter.getLongitude());
+                else
+                    return new GeoPoint(dataBefore.getMetric(), dataBefore.getPrimaryTime(), dataBefore.secondaryTimeUnboxed(), dataBefore.getLatitude(), dataBefore.getLongitude());
+            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
     }
 
@@ -538,198 +690,245 @@ public class SagittariusReader implements Reader {
         ResultSet rs = session.execute(statement);
         Mapper<Latest> mapper = mappingManager.mapper(Latest.class);
         return mapper.map(rs);
-
     }
 
     private ResultSet getPointResultSet(String host, String metric, String timeSlice, ValueType valueType) {
         String table = getTableByType(valueType);
-        List<ResultSet> resultSets = new ArrayList<>();
         SimpleStatement statement = new SimpleStatement(String.format(QueryStatement.LATEST_POINT_QUERY_STATEMENT, table, host, metric, timeSlice));
         ResultSet set = session.execute(statement);
         return set;
     }
 
     @Override
-    public Map<String, Map<String, IntPoint>> getIntLatest(List<String> hosts, List<String> metrics) {
-        Result<Latest> latests = getLatestResult(hosts, metrics);
-        ResultSet rs;
-        Mapper<IntData> mapperInt = mappingManager.mapper(IntData.class);
+    public Map<String, Map<String, IntPoint>> getIntLatest(List<String> hosts, List<String> metrics) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
         Map<String, Map<String, IntPoint>> result = new HashMap<>();
 
-        for (Latest latest : latests) {
-            String host = latest.getHost();
-            String metric = latest.getMetric();
-            String timeSlice = latest.getTimeSlice();
-            rs = getPointResultSet(host, metric, timeSlice, ValueType.INT);
-            IntData data = mapperInt.map(rs).one();
-            if(result.containsKey(host)){
-                result.get(host).put(metric, new IntPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+        try {
+            Result<Latest> latests = getLatestResult(hosts, metrics);
+            Mapper<IntData> mapperInt = mappingManager.mapper(IntData.class);
+
+            for (Latest latest : latests) {
+                String host = latest.getHost();
+                String metric = latest.getMetric();
+                String timeSlice = latest.getTimeSlice();
+                ResultSet rs = getPointResultSet(host, metric, timeSlice, ValueType.INT);
+                IntData data = mapperInt.map(rs).one();
+                if (result.containsKey(host)) {
+                    result.get(host).put(metric, new IntPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                } else {
+                    Map<String, IntPoint> metricMap = new HashMap<>();
+                    metricMap.put(metric, new IntPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                    result.put(host, metricMap);
+                }
             }
-            else {
-                Map<String, IntPoint> metricMap = new HashMap<>();
-                metricMap.put(metric, new IntPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                result.put(host, metricMap);
-            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, LongPoint>> getLongLatest(List<String> hosts, List<String> metrics) {
-        Result<Latest> latests = getLatestResult(hosts, metrics);
-        ResultSet rs;
-        Mapper<LongData> mapperInt = mappingManager.mapper(LongData.class);
+    public Map<String, Map<String, LongPoint>> getLongLatest(List<String> hosts, List<String> metrics) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
         Map<String, Map<String, LongPoint>> result = new HashMap<>();
 
-        for (Latest latest : latests) {
-            String host = latest.getHost();
-            String metric = latest.getMetric();
-            String timeSlice = latest.getTimeSlice();
-            rs = getPointResultSet(host, metric, timeSlice, ValueType.LONG);
-            LongData data = mapperInt.map(rs).one();
-            if(result.containsKey(host)){
-                result.get(host).put(metric, new LongPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+        try {
+            Result<Latest> latests = getLatestResult(hosts, metrics);
+            Mapper<LongData> mapperInt = mappingManager.mapper(LongData.class);
+
+            for (Latest latest : latests) {
+                String host = latest.getHost();
+                String metric = latest.getMetric();
+                String timeSlice = latest.getTimeSlice();
+                ResultSet rs = getPointResultSet(host, metric, timeSlice, ValueType.LONG);
+                LongData data = mapperInt.map(rs).one();
+                if (result.containsKey(host)) {
+                    result.get(host).put(metric, new LongPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                } else {
+                    Map<String, LongPoint> metricMap = new HashMap<>();
+                    metricMap.put(metric, new LongPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                    result.put(host, metricMap);
+                }
             }
-            else {
-                Map<String, LongPoint> metricMap = new HashMap<>();
-                metricMap.put(metric, new LongPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                result.put(host, metricMap);
-            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, FloatPoint>> getFloatLatest(List<String> hosts, List<String> metrics) {
-        Result<Latest> latests = getLatestResult(hosts, metrics);
-        ResultSet rs;
-        Mapper<FloatData> mapperInt = mappingManager.mapper(FloatData.class);
+    public Map<String, Map<String, FloatPoint>> getFloatLatest(List<String> hosts, List<String> metrics) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
         Map<String, Map<String, FloatPoint>> result = new HashMap<>();
 
-        for (Latest latest : latests) {
-            String host = latest.getHost();
-            String metric = latest.getMetric();
-            String timeSlice = latest.getTimeSlice();
-            rs = getPointResultSet(host, metric, timeSlice, ValueType.FLOAT);
-            FloatData data = mapperInt.map(rs).one();
-            if(result.containsKey(host)){
-                result.get(host).put(metric, new FloatPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+        try {
+            Result<Latest> latests = getLatestResult(hosts, metrics);
+            Mapper<FloatData> mapperInt = mappingManager.mapper(FloatData.class);
+
+            for (Latest latest : latests) {
+                String host = latest.getHost();
+                String metric = latest.getMetric();
+                String timeSlice = latest.getTimeSlice();
+                ResultSet rs = getPointResultSet(host, metric, timeSlice, ValueType.FLOAT);
+                FloatData data = mapperInt.map(rs).one();
+                if (result.containsKey(host)) {
+                    result.get(host).put(metric, new FloatPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                } else {
+                    Map<String, FloatPoint> metricMap = new HashMap<>();
+                    metricMap.put(metric, new FloatPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                    result.put(host, metricMap);
+                }
             }
-            else {
-                Map<String, FloatPoint> metricMap = new HashMap<>();
-                metricMap.put(metric, new FloatPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                result.put(host, metricMap);
-            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String,DoublePoint>> getDoubleLatest(List<String> hosts, List<String> metrics) {
-        Result<Latest> latests = getLatestResult(hosts, metrics);
-        ResultSet rs;
-        Mapper<DoubleData> mapperInt = mappingManager.mapper(DoubleData.class);
+    public Map<String, Map<String, DoublePoint>> getDoubleLatest(List<String> hosts, List<String> metrics) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
         Map<String, Map<String, DoublePoint>> result = new HashMap<>();
 
-        for (Latest latest : latests) {
-            String host = latest.getHost();
-            String metric = latest.getMetric();
-            String timeSlice = latest.getTimeSlice();
-            rs = getPointResultSet(host, metric, timeSlice, ValueType.DOUBLE);
-            DoubleData data = mapperInt.map(rs).one();
+        try {
+            Result<Latest> latests = getLatestResult(hosts, metrics);
+            Mapper<DoubleData> mapperInt = mappingManager.mapper(DoubleData.class);
 
-            if(result.containsKey(host)){
-                result.get(host).put(metric, new DoublePoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+            for (Latest latest : latests) {
+                String host = latest.getHost();
+                String metric = latest.getMetric();
+                String timeSlice = latest.getTimeSlice();
+                ResultSet rs = getPointResultSet(host, metric, timeSlice, ValueType.DOUBLE);
+                DoubleData data = mapperInt.map(rs).one();
+
+                if (result.containsKey(host)) {
+                    result.get(host).put(metric, new DoublePoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                } else {
+                    Map<String, DoublePoint> metricMap = new HashMap<>();
+                    metricMap.put(metric, new DoublePoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                    result.put(host, metricMap);
+                }
             }
-            else {
-                Map<String, DoublePoint> metricMap = new HashMap<>();
-                metricMap.put(metric, new DoublePoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                result.put(host, metricMap);
-            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, BooleanPoint>> getBooleanLatest(List<String> hosts, List<String> metrics) {
-        Result<Latest> latests = getLatestResult(hosts, metrics);
-        ResultSet rs;
-        Mapper<BooleanData> mapperInt = mappingManager.mapper(BooleanData.class);
+    public Map<String, Map<String, BooleanPoint>> getBooleanLatest(List<String> hosts, List<String> metrics) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
         Map<String, Map<String, BooleanPoint>> result = new HashMap<>();
 
-        for (Latest latest : latests) {
-            String host = latest.getHost();
-            String metric = latest.getMetric();
-            String timeSlice = latest.getTimeSlice();
-            rs = getPointResultSet(host, metric, timeSlice, ValueType.BOOLEAN);
-            BooleanData data = mapperInt.map(rs).one();
-            if(result.containsKey(host)){
-                result.get(host).put(metric, new BooleanPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+        try {
+            Result<Latest> latests = getLatestResult(hosts, metrics);
+            Mapper<BooleanData> mapperInt = mappingManager.mapper(BooleanData.class);
+
+            for (Latest latest : latests) {
+                String host = latest.getHost();
+                String metric = latest.getMetric();
+                String timeSlice = latest.getTimeSlice();
+                ResultSet rs = getPointResultSet(host, metric, timeSlice, ValueType.BOOLEAN);
+                BooleanData data = mapperInt.map(rs).one();
+                if (result.containsKey(host)) {
+                    result.get(host).put(metric, new BooleanPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                } else {
+                    Map<String, BooleanPoint> metricMap = new HashMap<>();
+                    metricMap.put(metric, new BooleanPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                    result.put(host, metricMap);
+                }
             }
-            else {
-                Map<String, BooleanPoint> metricMap = new HashMap<>();
-                metricMap.put(metric, new BooleanPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                result.put(host, metricMap);
-            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, StringPoint>> getStringLatest(List<String> hosts, List<String> metrics) {
-        Result<Latest> latests = getLatestResult(hosts, metrics);
-        ResultSet rs;
-        Mapper<StringData> mapperInt = mappingManager.mapper(StringData.class);
+    public Map<String, Map<String, StringPoint>> getStringLatest(List<String> hosts, List<String> metrics) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
         Map<String, Map<String, StringPoint>> result = new HashMap<>();
 
-        for (Latest latest : latests) {
-            String host = latest.getHost();
-            String metric = latest.getMetric();
-            String timeSlice = latest.getTimeSlice();
-            rs = getPointResultSet(host, metric, timeSlice, ValueType.STRING);
-            StringData data = mapperInt.map(rs).one();
-            if(result.containsKey(host)){
-                result.get(host).put(metric, new StringPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+        try {
+            Result<Latest> latests = getLatestResult(hosts, metrics);
+            Mapper<StringData> mapperInt = mappingManager.mapper(StringData.class);
+
+            for (Latest latest : latests) {
+                String host = latest.getHost();
+                String metric = latest.getMetric();
+                String timeSlice = latest.getTimeSlice();
+                ResultSet rs = getPointResultSet(host, metric, timeSlice, ValueType.STRING);
+                StringData data = mapperInt.map(rs).one();
+                if (result.containsKey(host)) {
+                    result.get(host).put(metric, new StringPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                } else {
+                    Map<String, StringPoint> metricMap = new HashMap<>();
+                    metricMap.put(metric, new StringPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
+                    result.put(host, metricMap);
+                }
             }
-            else {
-                Map<String, StringPoint> metricMap = new HashMap<>();
-                metricMap.put(metric, new StringPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                result.put(host, metricMap);
-            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, GeoPoint>> getGeoLatest(List<String> hosts, List<String> metrics) {
-        Result<Latest> latests = getLatestResult(hosts, metrics);
-        ResultSet rs;
-        Mapper<GeoData> mapperInt = mappingManager.mapper(GeoData.class);
+    public Map<String, Map<String, GeoPoint>> getGeoLatest(List<String> hosts, List<String> metrics) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
         Map<String, Map<String, GeoPoint>> result = new HashMap<>();
 
-        for (Latest latest : latests) {
-            String host = latest.getHost();
-            String metric = latest.getMetric();
-            String timeSlice = latest.getTimeSlice();
-            rs = getPointResultSet(host, metric, timeSlice, ValueType.GEO);
-            GeoData data = mapperInt.map(rs).one();
-            if(result.containsKey(host)){
-                result.get(host).put(metric, new GeoPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
+        try {
+            Result<Latest> latests = getLatestResult(hosts, metrics);
+            Mapper<GeoData> mapperInt = mappingManager.mapper(GeoData.class);
+
+            for (Latest latest : latests) {
+                String host = latest.getHost();
+                String metric = latest.getMetric();
+                String timeSlice = latest.getTimeSlice();
+                ResultSet rs = getPointResultSet(host, metric, timeSlice, ValueType.GEO);
+                GeoData data = mapperInt.map(rs).one();
+                if (result.containsKey(host)) {
+                    result.get(host).put(metric, new GeoPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
+                } else {
+                    Map<String, GeoPoint> metricMap = new HashMap<>();
+                    metricMap.put(metric, new GeoPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
+                    result.put(host, metricMap);
+                }
             }
-            else {
-                Map<String, GeoPoint> metricMap = new HashMap<>();
-                metricMap.put(metric, new GeoPoint(metric, data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
-                result.put(host, metricMap);
-            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     private List<String> getRangeQueryString(List<String> hosts, List<String> metrics, long startTime, long endTime, ValueType valueType) {
@@ -822,258 +1021,325 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, Map<String, List<IntPoint>>> getIntRange(List<String> hosts, List<String> metrics, long startTime, long endTime) {
+    public Map<String, Map<String, List<IntPoint>>> getIntRange(List<String> hosts, List<String> metrics, long startTime, long endTime) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
         if (endTime < startTime)
             return null;
 
-        List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.INT);
-        Mapper<IntData> mapper = mappingManager.mapper(IntData.class);
+        Map<String, Map<String, List<IntPoint>>> result = new HashMap<>();
         List<IntData> datas = new ArrayList<>();
-        for (String query : querys) {
-            ResultSet rs = session.execute(query);
-            datas.addAll(mapper.map(rs).all());
+
+        try {
+            List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.INT);
+            Mapper<IntData> mapper = mappingManager.mapper(IntData.class);
+            for (String query : querys) {
+                ResultSet rs = session.execute(query);
+                datas.addAll(mapper.map(rs).all());
+            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
         }
 
-        Map<String, Map<String, List<IntPoint>>> result = new HashMap<>();
         for (IntData data : datas) {
             String host = data.getHost();
             String metric = data.getMetric();
-            if(result.containsKey(host)){
-                if(result.get(host).containsKey(metric)){
+            if (result.containsKey(host)) {
+                if (result.get(host).containsKey(metric)) {
                     result.get(host).get(metric).add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                }
-                else {
+                } else {
                     List<IntPoint> points = new ArrayList<>();
                     points.add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                     result.get(host).put(metric, points);
                 }
-            }
-            else {
+            } else {
                 List<IntPoint> points = new ArrayList<>();
                 points.add(new IntPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                Map<String, List<IntPoint>> resultList = new HashMap<>();
-                resultList.put(metric, points);
-                result.put(host, resultList);
+                Map<String, List<IntPoint>> metricMap = new HashMap<>();
+                metricMap.put(metric, points);
+                result.put(host, metricMap);
             }
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, List<LongPoint>>> getLongRange(List<String> hosts, List<String> metrics, long startTime, long endTime) {
-        List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.LONG);
-        Mapper<LongData> mapper = mappingManager.mapper(LongData.class);
-        List<LongData> datas = new ArrayList<>();
-        for (String query : querys) {
-            ResultSet rs = session.execute(query);
-            datas.addAll(mapper.map(rs).all());
-        }
+    public Map<String, Map<String, List<LongPoint>>> getLongRange(List<String> hosts, List<String> metrics, long startTime, long endTime) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
+        if (endTime < startTime)
+            return null;
 
         Map<String, Map<String, List<LongPoint>>> result = new HashMap<>();
+        List<LongData> datas = new ArrayList<>();
+
+        try {
+            List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.LONG);
+            Mapper<LongData> mapper = mappingManager.mapper(LongData.class);
+            for (String query : querys) {
+                ResultSet rs = session.execute(query);
+                datas.addAll(mapper.map(rs).all());
+            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+        }
+
         for (LongData data : datas) {
             String host = data.getHost();
             String metric = data.getMetric();
-            if(result.containsKey(host)){
-                if(result.get(host).containsKey(metric)){
+            if (result.containsKey(host)) {
+                if (result.get(host).containsKey(metric)) {
                     result.get(host).get(metric).add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                }
-                else {
+                } else {
                     List<LongPoint> points = new ArrayList<>();
                     points.add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                     result.get(host).put(metric, points);
                 }
-            }
-            else {
+            } else {
                 List<LongPoint> points = new ArrayList<>();
                 points.add(new LongPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                Map<String, List<LongPoint>> resultList = new HashMap<>();
-                resultList.put(metric, points);
-                result.put(host, resultList);
+                Map<String, List<LongPoint>> metricMap = new HashMap<>();
+                metricMap.put(metric, points);
+                result.put(host, metricMap);
             }
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, List<FloatPoint>>> getFloatRange(List<String> hosts, List<String> metrics, long startTime, long endTime) {
-        List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.FLOAT);
-        Mapper<FloatData> mapper = mappingManager.mapper(FloatData.class);
-        List<FloatData> datas = new ArrayList<>();
-        for (String query : querys) {
-            ResultSet rs = session.execute(query);
-            datas.addAll(mapper.map(rs).all());
-        }
+    public Map<String, Map<String, List<FloatPoint>>> getFloatRange(List<String> hosts, List<String> metrics, long startTime, long endTime) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
+        if (endTime < startTime)
+            return null;
 
         Map<String, Map<String, List<FloatPoint>>> result = new HashMap<>();
+        List<FloatData> datas = new ArrayList<>();
+
+        try {
+            List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.FLOAT);
+            Mapper<FloatData> mapper = mappingManager.mapper(FloatData.class);
+            for (String query : querys) {
+                ResultSet rs = session.execute(query);
+                datas.addAll(mapper.map(rs).all());
+            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+        }
+
         for (FloatData data : datas) {
             String host = data.getHost();
             String metric = data.getMetric();
-            if(result.containsKey(host)){
-                if(result.get(host).containsKey(metric)){
+            if (result.containsKey(host)) {
+                if (result.get(host).containsKey(metric)) {
                     result.get(host).get(metric).add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                }
-                else {
+                } else {
                     List<FloatPoint> points = new ArrayList<>();
                     points.add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                     result.get(host).put(metric, points);
                 }
-            }
-            else {
+            } else {
                 List<FloatPoint> points = new ArrayList<>();
                 points.add(new FloatPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                Map<String, List<FloatPoint>> resultList = new HashMap<>();
-                resultList.put(metric, points);
-                result.put(host, resultList);
+                Map<String, List<FloatPoint>> metricMap = new HashMap<>();
+                metricMap.put(metric, points);
+                result.put(host, metricMap);
             }
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, List<DoublePoint>>> getDoubleRange(List<String> hosts, List<String> metrics, long startTime, long endTime) {
-        List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.DOUBLE);
-        Mapper<DoubleData> mapper = mappingManager.mapper(DoubleData.class);
-        List<DoubleData> datas = new ArrayList<>();
-        for (String query : querys) {
-            ResultSet rs = session.execute(query);
-            datas.addAll(mapper.map(rs).all());
-        }
+    public Map<String, Map<String, List<DoublePoint>>> getDoubleRange(List<String> hosts, List<String> metrics, long startTime, long endTime) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
+        if (endTime < startTime)
+            return null;
 
         Map<String, Map<String, List<DoublePoint>>> result = new HashMap<>();
+        List<DoubleData> datas = new ArrayList<>();
+
+        try {
+            List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.DOUBLE);
+            Mapper<DoubleData> mapper = mappingManager.mapper(DoubleData.class);
+            for (String query : querys) {
+                ResultSet rs = session.execute(query);
+                datas.addAll(mapper.map(rs).all());
+            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+        }
+
         for (DoubleData data : datas) {
             String host = data.getHost();
             String metric = data.getMetric();
-            if(result.containsKey(host)){
-                if(result.get(host).containsKey(metric)){
+            if (result.containsKey(host)) {
+                if (result.get(host).containsKey(metric)) {
                     result.get(host).get(metric).add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                }
-                else {
+                } else {
                     List<DoublePoint> points = new ArrayList<>();
                     points.add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                     result.get(host).put(metric, points);
                 }
-            }
-            else {
+            } else {
                 List<DoublePoint> points = new ArrayList<>();
                 points.add(new DoublePoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                Map<String, List<DoublePoint>> resultList = new HashMap<>();
-                resultList.put(metric, points);
-                result.put(host, resultList);
+                Map<String, List<DoublePoint>> metricMap = new HashMap<>();
+                metricMap.put(metric, points);
+                result.put(host, metricMap);
             }
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, List<BooleanPoint>>> getBooleanRange(List<String> hosts, List<String> metrics, long startTime, long endTime) {
-        List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.BOOLEAN);
-        Mapper<BooleanData> mapper = mappingManager.mapper(BooleanData.class);
-        List<BooleanData> datas = new ArrayList<>();
-        for (String query : querys) {
-            ResultSet rs = session.execute(query);
-            datas.addAll(mapper.map(rs).all());
-        }
+    public Map<String, Map<String, List<BooleanPoint>>> getBooleanRange(List<String> hosts, List<String> metrics, long startTime, long endTime) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
+        if (endTime < startTime)
+            return null;
 
         Map<String, Map<String, List<BooleanPoint>>> result = new HashMap<>();
+        List<BooleanData> datas = new ArrayList<>();
+
+        try {
+            List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.BOOLEAN);
+            Mapper<BooleanData> mapper = mappingManager.mapper(BooleanData.class);
+            for (String query : querys) {
+                ResultSet rs = session.execute(query);
+                datas.addAll(mapper.map(rs).all());
+            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+        }
+
         for (BooleanData data : datas) {
             String host = data.getHost();
             String metric = data.getMetric();
-            if(result.containsKey(host)){
-                if(result.get(host).containsKey(metric)){
+            if (result.containsKey(host)) {
+                if (result.get(host).containsKey(metric)) {
                     result.get(host).get(metric).add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                }
-                else {
+                } else {
                     List<BooleanPoint> points = new ArrayList<>();
                     points.add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                     result.get(host).put(metric, points);
                 }
-            }
-            else {
+            } else {
                 List<BooleanPoint> points = new ArrayList<>();
                 points.add(new BooleanPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                Map<String, List<BooleanPoint>> resultList = new HashMap<>();
-                resultList.put(metric, points);
-                result.put(host, resultList);
+                Map<String, List<BooleanPoint>> metricMap = new HashMap<>();
+                metricMap.put(metric, points);
+                result.put(host, metricMap);
             }
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, List<StringPoint>>> getStringRange(List<String> hosts, List<String> metrics, long startTime, long endTime) {
-        List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.STRING);
-        Mapper<StringData> mapper = mappingManager.mapper(StringData.class);
-        List<StringData> datas = new ArrayList<>();
-        for (String query : querys) {
-            ResultSet rs = session.execute(query);
-            datas.addAll(mapper.map(rs).all());
-        }
+    public Map<String, Map<String, List<StringPoint>>> getStringRange(List<String> hosts, List<String> metrics, long startTime, long endTime) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
+        if (endTime < startTime)
+            return null;
 
         Map<String, Map<String, List<StringPoint>>> result = new HashMap<>();
+        List<StringData> datas = new ArrayList<>();
+
+        try {
+            List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.STRING);
+            Mapper<StringData> mapper = mappingManager.mapper(StringData.class);
+            for (String query : querys) {
+                ResultSet rs = session.execute(query);
+                datas.addAll(mapper.map(rs).all());
+            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+        }
+
         for (StringData data : datas) {
             String host = data.getHost();
             String metric = data.getMetric();
-            if(result.containsKey(host)){
-                if(result.get(host).containsKey(metric)){
+            if (result.containsKey(host)) {
+                if (result.get(host).containsKey(metric)) {
                     result.get(host).get(metric).add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                }
-                else {
+                } else {
                     List<StringPoint> points = new ArrayList<>();
                     points.add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
                     result.get(host).put(metric, points);
                 }
-            }
-            else {
+            } else {
                 List<StringPoint> points = new ArrayList<>();
                 points.add(new StringPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getValue()));
-                Map<String, List<StringPoint>> resultList = new HashMap<>();
-                resultList.put(metric, points);
-                result.put(host, resultList);
+                Map<String, List<StringPoint>> metricMap = new HashMap<>();
+                metricMap.put(metric, points);
+                result.put(host, metricMap);
             }
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, List<GeoPoint>>> getGeoRange(List<String> hosts, List<String> metrics, long startTime, long endTime) {
-        List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.GEO);
-        Mapper<GeoData> mapper = mappingManager.mapper(GeoData.class);
-        List<GeoData> datas = new ArrayList<>();
-        for (String query : querys) {
-            ResultSet rs = session.execute(query);
-            datas.addAll(mapper.map(rs).all());
-        }
+    public Map<String, Map<String, List<GeoPoint>>> getGeoRange(List<String> hosts, List<String> metrics, long startTime, long endTime) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException {
+        if (endTime < startTime)
+            return null;
 
         Map<String, Map<String, List<GeoPoint>>> result = new HashMap<>();
+        List<GeoData> datas = new ArrayList<>();
+
+        try {
+            List<String> querys = getRangeQueryString(hosts, metrics, startTime, endTime, ValueType.GEO);
+            Mapper<GeoData> mapper = mappingManager.mapper(GeoData.class);
+            for (String query : querys) {
+                ResultSet rs = session.execute(query);
+                datas.addAll(mapper.map(rs).all());
+            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+        }
+
         for (GeoData data : datas) {
             String host = data.getHost();
             String metric = data.getMetric();
-            if(result.containsKey(host)){
-                if(result.get(host).containsKey(metric)){
+            if (result.containsKey(host)) {
+                if (result.get(host).containsKey(metric)) {
                     result.get(host).get(metric).add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
-                }
-                else {
+                } else {
                     List<GeoPoint> points = new ArrayList<>();
                     points.add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
                     result.get(host).put(metric, points);
                 }
-            }
-            else {
+            } else {
                 List<GeoPoint> points = new ArrayList<>();
                 points.add(new GeoPoint(data.getMetric(), data.getPrimaryTime(), data.secondaryTimeUnboxed(), data.getLatitude(), data.getLongitude()));
-                Map<String, List<GeoPoint>> resultList = new HashMap<>();
-                resultList.put(metric, points);
-                result.put(host, resultList);
+                Map<String, List<GeoPoint>> metricMap = new HashMap<>();
+                metricMap.put(metric, points);
+                result.put(host, metricMap);
             }
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     private List<String> getRangeQueryPredicates(List<String> hosts, List<String> metrics, long startTime, long endTime) {
@@ -1169,22 +1435,35 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public Map<String, Map<String, List<IntPoint>>> getIntRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter) {
+    public Map<String, Map<String, List<IntPoint>>> getIntRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException, SparkException {
+        if (endTime < startTime)
+            return null;
+
         Map<String, Map<String, List<IntPoint>>> result = new HashMap<>();
+        List<CassandraRow> rows = new ArrayList<>();
 
-        List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
-        if (predicates.size() == 0) {
-            return result;
+        try {
+            List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
+            if (predicates.size() == 0) {
+                return null;
+            }
+
+            String queryFilter = (filter == null) ? "" : " and " + filter;
+            JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_int").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
+            for (int i = 1; i < predicates.size(); ++i) {
+                CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_int").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
+                resultRDD = resultRDD.union(rdd);
+            }
+            rows = resultRDD.collect();
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+        } catch (Exception e) {
+            throw new SparkException(e.getMessage(), e.getCause());
         }
-
-        String queryFilter = (filter == null) ? "" : " and " + filter;
-        JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_int").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
-        for (int i = 1; i < predicates.size(); ++i) {
-            CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_int").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
-            resultRDD = resultRDD.union(rdd);
-        }
-        List<CassandraRow> rows = resultRDD.collect();
-
 
         for (CassandraRow row : rows) {
             String host = row.getString("host");
@@ -1211,25 +1490,39 @@ public class SagittariusReader implements Reader {
             }
         }
 
-        return result;
-
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, List<LongPoint>>> getLongRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter) {
-        Map<String, Map<String, List<LongPoint>>> result = new HashMap<>();
-        List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
-        if (predicates.size() == 0) {
-            return result;
-        }
-        String queryFilter = (filter == null) ? "" : " and " + filter;
-        JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_long").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
-        for (int i = 1; i < predicates.size(); ++i) {
-            CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_long").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
-            resultRDD = resultRDD.union(rdd);
-        }
-        List<CassandraRow> rows = resultRDD.collect();
+    public Map<String, Map<String, List<LongPoint>>> getLongRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException, SparkException {
+        if (endTime < startTime)
+            return null;
 
+        Map<String, Map<String, List<LongPoint>>> result = new HashMap<>();
+        List<CassandraRow> rows = new ArrayList<>();
+
+        try {
+            List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
+            if (predicates.size() == 0) {
+                return null;
+            }
+
+            String queryFilter = (filter == null) ? "" : " and " + filter;
+            JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_long").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
+            for (int i = 1; i < predicates.size(); ++i) {
+                CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_long").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
+                resultRDD = resultRDD.union(rdd);
+            }
+            rows = resultRDD.collect();
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+        } catch (Exception e) {
+            throw new SparkException(e.getMessage(), e.getCause());
+        }
 
         for (CassandraRow row : rows) {
             String host = row.getString("host");
@@ -1256,23 +1549,39 @@ public class SagittariusReader implements Reader {
             }
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, List<FloatPoint>>> getFloatRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter) {
+    public Map<String, Map<String, List<FloatPoint>>> getFloatRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException, SparkException {
+        if (endTime < startTime)
+            return null;
+
         Map<String, Map<String, List<FloatPoint>>> result = new HashMap<>();
-        List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
-        if (predicates.size() == 0) {
-            return result;
+        List<CassandraRow> rows = new ArrayList<>();
+
+        try {
+            List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
+            if (predicates.size() == 0) {
+                return null;
+            }
+
+            String queryFilter = (filter == null) ? "" : " and " + filter;
+            JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_float").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
+            for (int i = 1; i < predicates.size(); ++i) {
+                CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_float").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
+                resultRDD = resultRDD.union(rdd);
+            }
+            rows = resultRDD.collect();
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+        } catch (Exception e) {
+            throw new SparkException(e.getMessage(), e.getCause());
         }
-        String queryFilter = (filter == null) ? "" : " and " + filter;
-        JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_float").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
-        for (int i = 1; i < predicates.size(); ++i) {
-            CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_float").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
-            resultRDD = resultRDD.union(rdd);
-        }
-        List<CassandraRow> rows = resultRDD.collect();
 
         for (CassandraRow row : rows) {
             String host = row.getString("host");
@@ -1299,23 +1608,39 @@ public class SagittariusReader implements Reader {
             }
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, List<DoublePoint>>> getDoubleRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter) {
+    public Map<String, Map<String, List<DoublePoint>>> getDoubleRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException, SparkException {
+        if (endTime < startTime)
+            return null;
+
         Map<String, Map<String, List<DoublePoint>>> result = new HashMap<>();
-        List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
-        if (predicates.size() == 0) {
-            return result;
+        List<CassandraRow> rows = new ArrayList<>();
+
+        try {
+            List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
+            if (predicates.size() == 0) {
+                return null;
+            }
+
+            String queryFilter = (filter == null) ? "" : " and " + filter;
+            JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_double").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
+            for (int i = 1; i < predicates.size(); ++i) {
+                CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_double").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
+                resultRDD = resultRDD.union(rdd);
+            }
+            rows = resultRDD.collect();
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+        } catch (Exception e) {
+            throw new SparkException(e.getMessage(), e.getCause());
         }
-        String queryFilter = (filter == null) ? "" : " and " + filter;
-        JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_double").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
-        for (int i = 1; i < predicates.size(); ++i) {
-            CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_double").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
-            resultRDD = resultRDD.union(rdd);
-        }
-        List<CassandraRow> rows = resultRDD.collect();
 
         for (CassandraRow row : rows) {
             String host = row.getString("host");
@@ -1342,23 +1667,39 @@ public class SagittariusReader implements Reader {
             }
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, List<BooleanPoint>>> getBooleanRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter) {
+    public Map<String, Map<String, List<BooleanPoint>>> getBooleanRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException, SparkException {
+        if (endTime < startTime)
+            return null;
+
         Map<String, Map<String, List<BooleanPoint>>> result = new HashMap<>();
-        List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
-        if (predicates.size() == 0) {
-            return result;
+        List<CassandraRow> rows = new ArrayList<>();
+
+        try {
+            List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
+            if (predicates.size() == 0) {
+                return null;
+            }
+
+            String queryFilter = (filter == null) ? "" : " and " + filter;
+            JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_boolean").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
+            for (int i = 1; i < predicates.size(); ++i) {
+                CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_boolean").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
+                resultRDD = resultRDD.union(rdd);
+            }
+            rows = resultRDD.collect();
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+        } catch (Exception e) {
+            throw new SparkException(e.getMessage(), e.getCause());
         }
-        String queryFilter = (filter == null) ? "" : " and " + filter;
-        JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_boolean").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
-        for (int i = 1; i < predicates.size(); ++i) {
-            CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_boolean").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
-            resultRDD = resultRDD.union(rdd);
-        }
-        List<CassandraRow> rows = resultRDD.collect();
 
         for (CassandraRow row : rows) {
             String host = row.getString("host");
@@ -1385,23 +1726,39 @@ public class SagittariusReader implements Reader {
             }
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, List<StringPoint>>> getStringRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter) {
+    public Map<String, Map<String, List<StringPoint>>> getStringRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException, SparkException {
+        if (endTime < startTime)
+            return null;
+
         Map<String, Map<String, List<StringPoint>>> result = new HashMap<>();
-        List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
-        if (predicates.size() == 0) {
-            return result;
+        List<CassandraRow> rows = new ArrayList<>();
+
+        try {
+            List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
+            if (predicates.size() == 0) {
+                return null;
+            }
+
+            String regex = filter.split(" ")[2];
+            JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_text").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0)).filter(x -> x.getString("value").matches(regex));
+            for (int i = 1; i < predicates.size(); ++i) {
+                JavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_text").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i)).filter(x -> x.getString("value").matches(regex));
+                resultRDD = resultRDD.union(rdd);
+            }
+            rows = resultRDD.collect();
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+        } catch (Exception e) {
+            throw new SparkException(e.getMessage(), e.getCause());
         }
-        String regex = filter.split(" ")[2];
-        JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_text").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0)).filter(x -> x.getString("value").matches(regex));
-        for (int i = 1; i < predicates.size(); ++i) {
-            JavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_text").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i)).filter(x -> x.getString("value").matches(regex));
-            resultRDD = resultRDD.union(rdd);
-        }
-        List<CassandraRow> rows = resultRDD.collect();
 
         for (CassandraRow row : rows) {
             String host = row.getString("host");
@@ -1428,23 +1785,39 @@ public class SagittariusReader implements Reader {
             }
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, List<GeoPoint>>> getGeoRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter) {
+    public Map<String, Map<String, List<GeoPoint>>> getGeoRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException, SparkException {
+        if (endTime < startTime)
+            return null;
+
         Map<String, Map<String, List<GeoPoint>>> result = new HashMap<>();
-        List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
-        if (predicates.size() == 0) {
-            return result;
+        List<CassandraRow> rows = new ArrayList<>();
+
+        try {
+            List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
+            if (predicates.size() == 0) {
+                return null;
+            }
+
+            String queryFilter = (filter == null) ? "" : " and " + filter;
+            JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_geo").select("host", "metric", "primary_time", "secondary_time", "latitude", "longitude").where(predicates.get(0) + queryFilter);
+            for (int i = 1; i < predicates.size(); ++i) {
+                CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_geo").select("host", "metric", "primary_time", "secondary_time", "latitude", "longitude").where(predicates.get(i) + queryFilter);
+                resultRDD = resultRDD.union(rdd);
+            }
+            rows = resultRDD.collect();
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+        } catch (Exception e) {
+            throw new SparkException(e.getMessage(), e.getCause());
         }
-        String queryFilter = (filter == null) ? "" : " and " + filter;
-        JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_geo").select("host", "metric", "primary_time", "secondary_time", "latitude", "longitude").where(predicates.get(0) + queryFilter);
-        for (int i = 1; i < predicates.size(); ++i) {
-            CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_geo").select("host", "metric", "primary_time", "secondary_time", "latitude", "longitude").where(predicates.get(i) + queryFilter);
-            resultRDD = resultRDD.union(rdd);
-        }
-        List<CassandraRow> rows = resultRDD.collect();
 
         for (CassandraRow row : rows) {
             String host = row.getString("host");
@@ -1472,61 +1845,76 @@ public class SagittariusReader implements Reader {
             }
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, Double>> getIntRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType) {
-        Map<String, Map<String, Double>> result = new HashMap<>();
-        List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
-        if (predicates.size() == 0) {
-            return result;
-        }
-        String queryFilter = (filter == null) ? "" : " and " + filter;
-        JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_int").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
-        for (int i = 1; i < predicates.size(); ++i) {
-            CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_int").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
-            resultRDD = resultRDD.union(rdd);
-        }
+    public Map<String, Map<String, Double>> getIntRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException, SparkException {
+        if (endTime < startTime)
+            return null;
 
+        Map<String, Map<String, Double>> result = new HashMap<>();
         Map<HostMetricPair, Double> datas = new HashMap<>();
-        switch (aggregationType) {
-            case MIN: {
-                datas = resultRDD
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getInt("value")))
-                        .reduceByKey((e1, e2) -> e1 > e2 ? e2 : e1)
-                        .collectAsMap();
-                break;
+
+        try {
+            List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
+            if (predicates.size() == 0) {
+                return null;
             }
-            case MAX: {
-                datas = resultRDD
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getInt("value")))
-                        .reduceByKey((e1, e2) -> e1 > e2 ? e1 : e2)
-                        .collectAsMap();
-                break;
+
+            String queryFilter = (filter == null) ? "" : " and " + filter;
+            JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_int").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
+            for (int i = 1; i < predicates.size(); ++i) {
+                CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_int").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
+                resultRDD = resultRDD.union(rdd);
             }
-            case SUM: {
-                datas = resultRDD
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getInt("value")))
-                        .reduceByKey((e1, e2) -> e1 + e2)
-                        .collectAsMap();
-                break;
+
+            switch (aggregationType) {
+                case MIN: {
+                    datas = resultRDD
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getInt("value")))
+                            .reduceByKey((e1, e2) -> e1 > e2 ? e2 : e1)
+                            .collectAsMap();
+                    break;
+                }
+                case MAX: {
+                    datas = resultRDD
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getInt("value")))
+                            .reduceByKey((e1, e2) -> e1 > e2 ? e1 : e2)
+                            .collectAsMap();
+                    break;
+                }
+                case SUM: {
+                    datas = resultRDD
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getInt("value")))
+                            .reduceByKey((e1, e2) -> e1 + e2)
+                            .collectAsMap();
+                    break;
+                }
+                case COUNT: {
+                    datas = resultRDD
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), 1d))
+                            .reduceByKey((e1, e2) -> e1 + e2)
+                            .collectAsMap();
+                    break;
+                }
+                case AVG: {
+                    datas = resultRDD
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), new Tuple2<Double, Double>((double) e.getInt("value"), 1d)))
+                            .reduceByKey((a, b) -> new Tuple2<>(a._1() + b._1(), a._2() + b._2()))
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e._1().getHost(), e._1().getMetric()), e._2()._1() / e._2()._2()))
+                            .collectAsMap();
+                    break;
+                }
             }
-            case COUNT: {
-                datas = resultRDD
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), 1d))
-                        .reduceByKey((e1, e2) -> e1 + e2)
-                        .collectAsMap();
-                break;
-            }
-            case AVG: {
-                datas = resultRDD
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), new Tuple2<Double, Double>((double) e.getInt("value"), 1d)))
-                        .reduceByKey((a, b) -> new Tuple2<>(a._1() + b._1(), a._2() + b._2()))
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e._1().getHost(), e._1().getMetric()), e._2()._1() / e._2()._2()))
-                        .collectAsMap();
-                break;
-            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+        } catch (Exception e) {
+            throw new SparkException(e.getMessage(), e.getCause());
         }
 
         for (Map.Entry<HostMetricPair, Double> data : datas.entrySet()) {
@@ -1541,61 +1929,76 @@ public class SagittariusReader implements Reader {
             }
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, Double>> getLongRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType) {
-        Map<String, Map<String, Double>> result = new HashMap<>();
-        List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
-        if (predicates.size() == 0) {
-            return result;
-        }
-        String queryFilter = (filter == null) ? "" : " and " + filter;
-        JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_long").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
-        for (int i = 1; i < predicates.size(); ++i) {
-            CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_long").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
-            resultRDD = resultRDD.union(rdd);
-        }
+    public Map<String, Map<String, Double>> getLongRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException, SparkException {
+        if (endTime < startTime)
+            return null;
 
-        Map<HostMetricPair, Double> datas = null;
-        switch (aggregationType) {
-            case MIN: {
-                datas = resultRDD
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getLong("value")))
-                        .reduceByKey((e1, e2) -> e1 > e2 ? e2 : e1)
-                        .collectAsMap();
-                break;
+        Map<String, Map<String, Double>> result = new HashMap<>();
+        Map<HostMetricPair, Double> datas = new HashMap<>();
+
+        try {
+            List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
+            if (predicates.size() == 0) {
+                return null;
             }
-            case MAX: {
-                datas = resultRDD
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getLong("value")))
-                        .reduceByKey((e1, e2) -> e1 > e2 ? e1 : e2)
-                        .collectAsMap();
-                break;
+
+            String queryFilter = (filter == null) ? "" : " and " + filter;
+            JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_long").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
+            for (int i = 1; i < predicates.size(); ++i) {
+                CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_long").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
+                resultRDD = resultRDD.union(rdd);
             }
-            case SUM: {
-                datas = resultRDD
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getLong("value")))
-                        .reduceByKey((e1, e2) -> e1 + e2)
-                        .collectAsMap();
-                break;
+
+            switch (aggregationType) {
+                case MIN: {
+                    datas = resultRDD
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getLong("value")))
+                            .reduceByKey((e1, e2) -> e1 > e2 ? e2 : e1)
+                            .collectAsMap();
+                    break;
+                }
+                case MAX: {
+                    datas = resultRDD
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getLong("value")))
+                            .reduceByKey((e1, e2) -> e1 > e2 ? e1 : e2)
+                            .collectAsMap();
+                    break;
+                }
+                case SUM: {
+                    datas = resultRDD
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getLong("value")))
+                            .reduceByKey((e1, e2) -> e1 + e2)
+                            .collectAsMap();
+                    break;
+                }
+                case COUNT: {
+                    datas = resultRDD
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), 1d))
+                            .reduceByKey((e1, e2) -> e1 + e2)
+                            .collectAsMap();
+                    break;
+                }
+                case AVG: {
+                    datas = resultRDD
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), new Tuple2<Double, Double>((double) e.getLong("value"), 1d)))
+                            .reduceByKey((a, b) -> new Tuple2<>(a._1() + b._1(), a._2() + b._2()))
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e._1().getHost(), e._1().getMetric()), e._2()._1() / e._2()._2()))
+                            .collectAsMap();
+                    break;
+                }
             }
-            case COUNT: {
-                datas = resultRDD
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), 1d))
-                        .reduceByKey((e1, e2) -> e1 + e2)
-                        .collectAsMap();
-                break;
-            }
-            case AVG: {
-                datas = resultRDD
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), new Tuple2<Double, Double>((double) e.getLong("value"), 1d)))
-                        .reduceByKey((a, b) -> new Tuple2<>(a._1() + b._1(), a._2() + b._2()))
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e._1().getHost(), e._1().getMetric()), e._2()._1() / e._2()._2()))
-                        .collectAsMap();
-                break;
-            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+        } catch (Exception e) {
+            throw new SparkException(e.getMessage(), e.getCause());
         }
 
         for (Map.Entry<HostMetricPair, Double> data : datas.entrySet()) {
@@ -1610,61 +2013,76 @@ public class SagittariusReader implements Reader {
             }
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, Double>> getFloatRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType) {
-        Map<String, Map<String, Double>> result = new HashMap<>();
-        List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
-        if (predicates.size() == 0) {
-            return result;
-        }
-        String queryFilter = (filter == null) ? "" : " and " + filter;
-        JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_float").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
-        for (int i = 1; i < predicates.size(); ++i) {
-            CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_float").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
-            resultRDD = resultRDD.union(rdd);
-        }
+    public Map<String, Map<String, Double>> getFloatRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException, SparkException {
+        if (endTime < startTime)
+            return null;
 
-        Map<HostMetricPair, Double> datas = null;
-        switch (aggregationType) {
-            case MIN: {
-                datas = resultRDD
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getFloat("value")))
-                        .reduceByKey((e1, e2) -> e1 > e2 ? e2 : e1)
-                        .collectAsMap();
-                break;
+        Map<String, Map<String, Double>> result = new HashMap<>();
+        Map<HostMetricPair, Double> datas = new HashMap<>();
+
+        try {
+            List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
+            if (predicates.size() == 0) {
+                return null;
             }
-            case MAX: {
-                datas = resultRDD
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getFloat("value")))
-                        .reduceByKey((e1, e2) -> e1 > e2 ? e1 : e2)
-                        .collectAsMap();
-                break;
+
+            String queryFilter = (filter == null) ? "" : " and " + filter;
+            JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_float").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
+            for (int i = 1; i < predicates.size(); ++i) {
+                CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_float").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
+                resultRDD = resultRDD.union(rdd);
             }
-            case SUM: {
-                datas = resultRDD
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getFloat("value")))
-                        .reduceByKey((e1, e2) -> e1 + e2)
-                        .collectAsMap();
-                break;
+
+            switch (aggregationType) {
+                case MIN: {
+                    datas = resultRDD
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getFloat("value")))
+                            .reduceByKey((e1, e2) -> e1 > e2 ? e2 : e1)
+                            .collectAsMap();
+                    break;
+                }
+                case MAX: {
+                    datas = resultRDD
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getFloat("value")))
+                            .reduceByKey((e1, e2) -> e1 > e2 ? e1 : e2)
+                            .collectAsMap();
+                    break;
+                }
+                case SUM: {
+                    datas = resultRDD
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getFloat("value")))
+                            .reduceByKey((e1, e2) -> e1 + e2)
+                            .collectAsMap();
+                    break;
+                }
+                case COUNT: {
+                    datas = resultRDD
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), 1d))
+                            .reduceByKey((e1, e2) -> e1 + e2)
+                            .collectAsMap();
+                    break;
+                }
+                case AVG: {
+                    datas = resultRDD
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), new Tuple2<Double, Double>((double) e.getFloat("value"), 1d)))
+                            .reduceByKey((a, b) -> new Tuple2<>(a._1() + b._1(), a._2() + b._2()))
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e._1().getHost(), e._1().getMetric()), e._2()._1() / e._2()._2()))
+                            .collectAsMap();
+                    break;
+                }
             }
-            case COUNT: {
-                datas = resultRDD
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), 1d))
-                        .reduceByKey((e1, e2) -> e1 + e2)
-                        .collectAsMap();
-                break;
-            }
-            case AVG: {
-                datas = resultRDD
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), new Tuple2<Double, Double>((double) e.getFloat("value"), 1d)))
-                        .reduceByKey((a, b) -> new Tuple2<>(a._1() + b._1(), a._2() + b._2()))
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e._1().getHost(), e._1().getMetric()), e._2()._1() / e._2()._2()))
-                        .collectAsMap();
-                break;
-            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+        } catch (Exception e) {
+            throw new SparkException(e.getMessage(), e.getCause());
         }
 
         for (Map.Entry<HostMetricPair, Double> data : datas.entrySet()) {
@@ -1679,61 +2097,76 @@ public class SagittariusReader implements Reader {
             }
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, Double>> getDoubleRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType) {
-        Map<String, Map<String, Double>> result = new HashMap<>();
-        List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
-        if (predicates.size() == 0) {
-            return result;
-        }
-        String queryFilter = (filter == null) ? "" : " and " + filter;
-        JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_double").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
-        for (int i = 1; i < predicates.size(); ++i) {
-            CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_double").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
-            resultRDD = resultRDD.union(rdd);
-        }
+    public Map<String, Map<String, Double>> getDoubleRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException, SparkException {
+        if (endTime < startTime)
+            return null;
 
-        Map<HostMetricPair, Double> datas = null;
-        switch (aggregationType) {
-            case MIN: {
-                datas = resultRDD
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getDouble("value")))
-                        .reduceByKey((e1, e2) -> e1 > e2 ? e2 : e1)
-                        .collectAsMap();
-                break;
+        Map<String, Map<String, Double>> result = new HashMap<>();
+        Map<HostMetricPair, Double> datas = new HashMap<>();
+
+        try {
+            List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
+            if (predicates.size() == 0) {
+                return null;
             }
-            case MAX: {
-                datas = resultRDD
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getDouble("value")))
-                        .reduceByKey((e1, e2) -> e1 > e2 ? e1 : e2)
-                        .collectAsMap();
-                break;
+
+            String queryFilter = (filter == null) ? "" : " and " + filter;
+            JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_double").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
+            for (int i = 1; i < predicates.size(); ++i) {
+                CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_double").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
+                resultRDD = resultRDD.union(rdd);
             }
-            case SUM: {
-                datas = resultRDD
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getDouble("value")))
-                        .reduceByKey((e1, e2) -> e1 + e2)
-                        .collectAsMap();
-                break;
+
+            switch (aggregationType) {
+                case MIN: {
+                    datas = resultRDD
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getDouble("value")))
+                            .reduceByKey((e1, e2) -> e1 > e2 ? e2 : e1)
+                            .collectAsMap();
+                    break;
+                }
+                case MAX: {
+                    datas = resultRDD
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getDouble("value")))
+                            .reduceByKey((e1, e2) -> e1 > e2 ? e1 : e2)
+                            .collectAsMap();
+                    break;
+                }
+                case SUM: {
+                    datas = resultRDD
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), (double) e.getDouble("value")))
+                            .reduceByKey((e1, e2) -> e1 + e2)
+                            .collectAsMap();
+                    break;
+                }
+                case COUNT: {
+                    datas = resultRDD
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), 1d))
+                            .reduceByKey((e1, e2) -> e1 + e2)
+                            .collectAsMap();
+                    break;
+                }
+                case AVG: {
+                    datas = resultRDD
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), new Tuple2<Double, Double>((double) e.getDouble("value"), 1d)))
+                            .reduceByKey((a, b) -> new Tuple2<>(a._1() + b._1(), a._2() + b._2()))
+                            .mapToPair(e -> new Tuple2<>(new HostMetricPair(e._1().getHost(), e._1().getMetric()), e._2()._1() / e._2()._2()))
+                            .collectAsMap();
+                    break;
+                }
             }
-            case COUNT: {
-                datas = resultRDD
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), 1d))
-                        .reduceByKey((e1, e2) -> e1 + e2)
-                        .collectAsMap();
-                break;
-            }
-            case AVG: {
-                datas = resultRDD
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), new Tuple2<Double, Double>((double) e.getDouble("value"), 1d)))
-                        .reduceByKey((a, b) -> new Tuple2<>(a._1() + b._1(), a._2() + b._2()))
-                        .mapToPair(e -> new Tuple2<>(new HostMetricPair(e._1().getHost(), e._1().getMetric()), e._2()._1() / e._2()._2()))
-                        .collectAsMap();
-                break;
-            }
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+        } catch (Exception e) {
+            throw new SparkException(e.getMessage(), e.getCause());
         }
 
         for (Map.Entry<HostMetricPair, Double> data : datas.entrySet()) {
@@ -1747,28 +2180,44 @@ public class SagittariusReader implements Reader {
                 result.put(host, map);
             }
         }
-        return result;
+
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, Double>> getBooleanRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType) {
+    public Map<String, Map<String, Double>> getBooleanRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException, SparkException {
+        if (endTime < startTime)
+            return null;
+
         Map<String, Map<String, Double>> result = new HashMap<>();
-        List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
-        if (predicates.size() == 0) {
-            return result;
-        }
-        String queryFilter = (filter == null) ? "" : " and " + filter;
-        JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_boolean").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
-        for (int i = 1; i < predicates.size(); ++i) {
-            CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_boolean").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
-            resultRDD = resultRDD.union(rdd);
-        }
+        Map<HostMetricPair, Double> datas = new HashMap<>();
 
-        Map<HostMetricPair, Double> datas = resultRDD
-                .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), 1d))
-                .reduceByKey((e1, e2) -> e1 + e2)
-                .collectAsMap();
+        try {
+            List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
+            if (predicates.size() == 0) {
+                return null;
+            }
 
+            String queryFilter = (filter == null) ? "" : " and " + filter;
+            JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_boolean").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
+            for (int i = 1; i < predicates.size(); ++i) {
+                CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_boolean").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
+                resultRDD = resultRDD.union(rdd);
+            }
+
+            datas = resultRDD
+                    .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), 1d))
+                    .reduceByKey((e1, e2) -> e1 + e2)
+                    .collectAsMap();
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+        } catch (Exception e) {
+            throw new SparkException(e.getMessage(), e.getCause());
+        }
 
         for (Map.Entry<HostMetricPair, Double> data : datas.entrySet()) {
             String host = data.getKey().getHost();
@@ -1782,28 +2231,43 @@ public class SagittariusReader implements Reader {
             }
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, Double>> getStringRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType) {
+    public Map<String, Map<String, Double>> getStringRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException, SparkException {
+        if (endTime < startTime)
+            return null;
+
         Map<String, Map<String, Double>> result = new HashMap<>();
-        List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
-        if (predicates.size() == 0) {
-            return result;
-        }
-        String regex = filter.split(" ")[2];
-        JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_text").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0)).filter(x -> x.getString("value").matches(regex));
-        for (int i = 1; i < predicates.size(); ++i) {
-            JavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_text").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i)).filter(x -> x.getString("value").matches(regex));
-            resultRDD = resultRDD.union(rdd);
-        }
+        Map<HostMetricPair, Double> datas = new HashMap<>();
 
-        Map<HostMetricPair, Double> datas = resultRDD
-                .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), 1d))
-                .reduceByKey((e1, e2) -> e1 + e2)
-                .collectAsMap();
+        try {
+            List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
+            if (predicates.size() == 0) {
+                return null;
+            }
 
+            String regex = filter.split(" ")[2];
+            JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_text").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0)).filter(x -> x.getString("value").matches(regex));
+            for (int i = 1; i < predicates.size(); ++i) {
+                JavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_text").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i)).filter(x -> x.getString("value").matches(regex));
+                resultRDD = resultRDD.union(rdd);
+            }
+
+            datas = resultRDD
+                    .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), 1d))
+                    .reduceByKey((e1, e2) -> e1 + e2)
+                    .collectAsMap();
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+        } catch (Exception e) {
+            throw new SparkException(e.getMessage(), e.getCause());
+        }
 
         for (Map.Entry<HostMetricPair, Double> data : datas.entrySet()) {
             String host = data.getKey().getHost();
@@ -1817,28 +2281,44 @@ public class SagittariusReader implements Reader {
             }
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     @Override
-    public Map<String, Map<String, Double>> getGeoRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType) {
-        Map<String, Map<String, Double>> result = new HashMap<>();
-        List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
-        if (predicates.size() == 0) {
-            return result;
-        }
-        String queryFilter = (filter == null) ? "" : " and " + filter;
-        JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_geo").select("host", "metric", "primary_time", "secondary_time", "latitude", "longitude").where(predicates.get(0) + queryFilter);
-        for (int i = 1; i < predicates.size(); ++i) {
-            CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_geo").select("host", "metric", "primary_time", "secondary_time", "latitude", "longitude").where(predicates.get(i) + queryFilter);
-            resultRDD = resultRDD.union(rdd);
-        }
+    public Map<String, Map<String, Double>> getGeoRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType) throws com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException, SparkException {
+        if (endTime < startTime)
+            return null;
 
-        //only count
-        Map<HostMetricPair, Double> datas = resultRDD
-                .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), 1d))
-                .reduceByKey((e1, e2) -> e1 + e2)
-                .collectAsMap();
+        Map<String, Map<String, Double>> result = new HashMap<>();
+        Map<HostMetricPair, Double> datas = new HashMap<>();
+
+        try {
+            List<String> predicates = getRangeQueryPredicates(hosts, metrics, startTime, endTime);
+            if (predicates.size() == 0) {
+                return null;
+            }
+
+            String queryFilter = (filter == null) ? "" : " and " + filter;
+            JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_geo").select("host", "metric", "primary_time", "secondary_time", "latitude", "longitude").where(predicates.get(0) + queryFilter);
+            for (int i = 1; i < predicates.size(); ++i) {
+                CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_geo").select("host", "metric", "primary_time", "secondary_time", "latitude", "longitude").where(predicates.get(i) + queryFilter);
+                resultRDD = resultRDD.union(rdd);
+            }
+
+            //only count
+            datas = resultRDD
+                    .mapToPair(e -> new Tuple2<>(new HostMetricPair(e.getString("host"), e.getString("metric")), 1d))
+                    .reduceByKey((e1, e2) -> e1 + e2)
+                    .collectAsMap();
+        } catch (NoHostAvailableException e) {
+            throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+        } catch (OperationTimedOutException | ReadTimeoutException e) {
+            throw new TimeoutException(e.getMessage(), e.getCause());
+        } catch (QueryExecutionException e) {
+            throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+        } catch (Exception e) {
+            throw new SparkException(e.getMessage(), e.getCause());
+        }
 
         for (Map.Entry<HostMetricPair, Double> data : datas.entrySet()) {
             String host = data.getKey().getHost();
@@ -1852,7 +2332,7 @@ public class SagittariusReader implements Reader {
             }
         }
 
-        return result;
+        return result.size() != 0 ? result : null;
     }
 
     public void test() throws IOException {
@@ -1866,7 +2346,11 @@ public class SagittariusReader implements Reader {
 
         hosts.add("131258");
 
-        exportFloatCSV(hosts, getMetrics(), start, end, 240, null, filePath);
+        try {
+            exportFloatCSV(hosts, getMetrics(), start, end, 240, null, filePath);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
         /*Map<String, String> map = new HashMap<>();
         map.put("keyspace", "sagittarius");
         map.put("table", "data_float");
@@ -2241,7 +2725,9 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public void exportIntCSV(List<String> hosts, List<String> metrics, long startTime, long endTime, int splitHours, String filter, String filePath) throws IOException {
+    public void exportIntCSV(List<String> hosts, List<String> metrics, long startTime, long endTime, int splitHours, String filter, String filePath) throws IOException, com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException, SparkException {
+        if (endTime < startTime) return;
+
         //generate time ranges
         List<Long> timePoints = new ArrayList<>();
         timePoints.add(startTime);
@@ -2271,24 +2757,35 @@ public class SagittariusReader implements Reader {
             List<String> single = new ArrayList<>();
             single.add(host);
             for (int j = 0; j < timePoints.size() - 1; ++j) {
-                List<String> predicates = getRangeQueryPredicates(single, metrics, timePoints.get(j), timePoints.get(j + 1));
-                if (predicates.size() == 0) {
-                    continue;
-                }
-                //query cassandra
-                JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_int").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
-                for (int i = 1; i < predicates.size(); ++i) {
-                    CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_int").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
-                    resultRDD = resultRDD.union(rdd);
-                }
+                List<Map.Entry<Long, List<CassandraRow>>> entryList = new ArrayList<>();
+                try {
+                    List<String> predicates = getRangeQueryPredicates(single, metrics, timePoints.get(j), timePoints.get(j + 1));
+                    if (predicates.size() == 0) {
+                        continue;
+                    }
+                    //query cassandra
+                    JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_int").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
+                    for (int i = 1; i < predicates.size(); ++i) {
+                        CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_int").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
+                        resultRDD = resultRDD.union(rdd);
+                    }
 
-                List<Map.Entry<Long, List<CassandraRow>>> entryList = resultRDD.collect()
-                        .stream()
-                        .collect(Collectors.groupingBy(e -> e.getLong("primary_time")))
-                        .entrySet()
-                        .stream()
-                        .sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey()))
-                        .collect(Collectors.toList());
+                    entryList = resultRDD.collect()
+                            .stream()
+                            .collect(Collectors.groupingBy(e -> e.getLong("primary_time")))
+                            .entrySet()
+                            .stream()
+                            .sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey()))
+                            .collect(Collectors.toList());
+                } catch (NoHostAvailableException e) {
+                    throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+                } catch (OperationTimedOutException | ReadTimeoutException e) {
+                    throw new TimeoutException(e.getMessage(), e.getCause());
+                } catch (QueryExecutionException e) {
+                    throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+                } catch (Exception e) {
+                    throw new SparkException(e.getMessage(), e.getCause());
+                }
 
                 StringBuilder sb = new StringBuilder();
                 for (Map.Entry<Long, List<CassandraRow>> entry : entryList) {
@@ -2318,7 +2815,9 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public void exportLongCSV(List<String> hosts, List<String> metrics, long startTime, long endTime, int splitHours, String filter, String filePath) throws IOException {
+    public void exportLongCSV(List<String> hosts, List<String> metrics, long startTime, long endTime, int splitHours, String filter, String filePath) throws IOException, com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException, SparkException {
+        if (endTime < startTime) return;
+
         //generate time ranges
         List<Long> timePoints = new ArrayList<>();
         timePoints.add(startTime);
@@ -2348,24 +2847,35 @@ public class SagittariusReader implements Reader {
             List<String> single = new ArrayList<>();
             single.add(host);
             for (int j = 0; j < timePoints.size() - 1; ++j) {
-                List<String> predicates = getRangeQueryPredicates(single, metrics, timePoints.get(j), timePoints.get(j + 1));
-                if (predicates.size() == 0) {
-                    continue;
-                }
-                //query cassandra
-                JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_long").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
-                for (int i = 1; i < predicates.size(); ++i) {
-                    CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_long").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
-                    resultRDD = resultRDD.union(rdd);
-                }
+                List<Map.Entry<Long, List<CassandraRow>>> entryList = new ArrayList<>();
+                try {
+                    List<String> predicates = getRangeQueryPredicates(single, metrics, timePoints.get(j), timePoints.get(j + 1));
+                    if (predicates.size() == 0) {
+                        continue;
+                    }
+                    //query cassandra
+                    JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_long").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
+                    for (int i = 1; i < predicates.size(); ++i) {
+                        CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_long").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
+                        resultRDD = resultRDD.union(rdd);
+                    }
 
-                List<Map.Entry<Long, List<CassandraRow>>> entryList = resultRDD.collect()
-                        .stream()
-                        .collect(Collectors.groupingBy(e -> e.getLong("primary_time")))
-                        .entrySet()
-                        .stream()
-                        .sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey()))
-                        .collect(Collectors.toList());
+                    entryList = resultRDD.collect()
+                            .stream()
+                            .collect(Collectors.groupingBy(e -> e.getLong("primary_time")))
+                            .entrySet()
+                            .stream()
+                            .sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey()))
+                            .collect(Collectors.toList());
+                } catch (NoHostAvailableException e) {
+                    throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+                } catch (OperationTimedOutException | ReadTimeoutException e) {
+                    throw new TimeoutException(e.getMessage(), e.getCause());
+                } catch (QueryExecutionException e) {
+                    throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+                } catch (Exception e) {
+                    throw new SparkException(e.getMessage(), e.getCause());
+                }
 
                 StringBuilder sb = new StringBuilder();
                 for (Map.Entry<Long, List<CassandraRow>> entry : entryList) {
@@ -2395,7 +2905,9 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public void exportFloatCSV(List<String> hosts, List<String> metrics, long startTime, long endTime, int splitHours, String filter, String filePath) throws IOException {
+    public void exportFloatCSV(List<String> hosts, List<String> metrics, long startTime, long endTime, int splitHours, String filter, String filePath) throws IOException, com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException, SparkException {
+        if (endTime < startTime) return;
+
         //generate time ranges
         List<Long> timePoints = new ArrayList<>();
         timePoints.add(startTime);
@@ -2425,24 +2937,35 @@ public class SagittariusReader implements Reader {
             List<String> single = new ArrayList<>();
             single.add(host);
             for (int j = 0; j < timePoints.size() - 1; ++j) {
-                List<String> predicates = getRangeQueryPredicates(single, metrics, timePoints.get(j), timePoints.get(j + 1));
-                if (predicates.size() == 0) {
-                    continue;
-                }
-                //query cassandra
-                JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_float").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
-                for (int i = 1; i < predicates.size(); ++i) {
-                    CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_int").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
-                    resultRDD = resultRDD.union(rdd);
-                }
+                List<Map.Entry<Long, List<CassandraRow>>> entryList = new ArrayList<>();
+                try {
+                    List<String> predicates = getRangeQueryPredicates(single, metrics, timePoints.get(j), timePoints.get(j + 1));
+                    if (predicates.size() == 0) {
+                        continue;
+                    }
+                    //query cassandra
+                    JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_float").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
+                    for (int i = 1; i < predicates.size(); ++i) {
+                        CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_int").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
+                        resultRDD = resultRDD.union(rdd);
+                    }
 
-                List<Map.Entry<Long, List<CassandraRow>>> entryList = resultRDD.collect()
-                        .stream()
-                        .collect(Collectors.groupingBy(e -> e.getLong("primary_time")))
-                        .entrySet()
-                        .stream()
-                        .sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey()))
-                        .collect(Collectors.toList());
+                    entryList = resultRDD.collect()
+                            .stream()
+                            .collect(Collectors.groupingBy(e -> e.getLong("primary_time")))
+                            .entrySet()
+                            .stream()
+                            .sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey()))
+                            .collect(Collectors.toList());
+                } catch (NoHostAvailableException e) {
+                    throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+                } catch (OperationTimedOutException | ReadTimeoutException e) {
+                    throw new TimeoutException(e.getMessage(), e.getCause());
+                } catch (QueryExecutionException e) {
+                    throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+                } catch (Exception e) {
+                    throw new SparkException(e.getMessage(), e.getCause());
+                }
 
                 StringBuilder sb = new StringBuilder();
                 for (Map.Entry<Long, List<CassandraRow>> entry : entryList) {
@@ -2472,7 +2995,9 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public void exportDoubleCSV(List<String> hosts, List<String> metrics, long startTime, long endTime, int splitHours, String filter, String filePath) throws IOException {
+    public void exportDoubleCSV(List<String> hosts, List<String> metrics, long startTime, long endTime, int splitHours, String filter, String filePath) throws IOException, com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException, SparkException {
+        if (endTime < startTime) return;
+
         //generate time ranges
         List<Long> timePoints = new ArrayList<>();
         timePoints.add(startTime);
@@ -2502,24 +3027,35 @@ public class SagittariusReader implements Reader {
             List<String> single = new ArrayList<>();
             single.add(host);
             for (int j = 0; j < timePoints.size() - 1; ++j) {
-                List<String> predicates = getRangeQueryPredicates(single, metrics, timePoints.get(j), timePoints.get(j + 1));
-                if (predicates.size() == 0) {
-                    continue;
-                }
-                //query cassandra
-                JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_double").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
-                for (int i = 1; i < predicates.size(); ++i) {
-                    CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_double").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
-                    resultRDD = resultRDD.union(rdd);
-                }
+                List<Map.Entry<Long, List<CassandraRow>>> entryList = new ArrayList<>();
+                try {
+                    List<String> predicates = getRangeQueryPredicates(single, metrics, timePoints.get(j), timePoints.get(j + 1));
+                    if (predicates.size() == 0) {
+                        continue;
+                    }
+                    //query cassandra
+                    JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_double").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
+                    for (int i = 1; i < predicates.size(); ++i) {
+                        CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_double").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
+                        resultRDD = resultRDD.union(rdd);
+                    }
 
-                List<Map.Entry<Long, List<CassandraRow>>> entryList = resultRDD.collect()
-                        .stream()
-                        .collect(Collectors.groupingBy(e -> e.getLong("primary_time")))
-                        .entrySet()
-                        .stream()
-                        .sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey()))
-                        .collect(Collectors.toList());
+                    entryList = resultRDD.collect()
+                            .stream()
+                            .collect(Collectors.groupingBy(e -> e.getLong("primary_time")))
+                            .entrySet()
+                            .stream()
+                            .sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey()))
+                            .collect(Collectors.toList());
+                } catch (NoHostAvailableException e) {
+                    throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+                } catch (OperationTimedOutException | ReadTimeoutException e) {
+                    throw new TimeoutException(e.getMessage(), e.getCause());
+                } catch (QueryExecutionException e) {
+                    throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+                } catch (Exception e) {
+                    throw new SparkException(e.getMessage(), e.getCause());
+                }
 
                 StringBuilder sb = new StringBuilder();
                 for (Map.Entry<Long, List<CassandraRow>> entry : entryList) {
@@ -2549,7 +3085,9 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public void exportBooleanCSV(List<String> hosts, List<String> metrics, long startTime, long endTime, int splitHours, String filter, String filePath) throws IOException {
+    public void exportBooleanCSV(List<String> hosts, List<String> metrics, long startTime, long endTime, int splitHours, String filter, String filePath) throws IOException, com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException, SparkException {
+        if (endTime < startTime) return;
+
         //generate time ranges
         List<Long> timePoints = new ArrayList<>();
         timePoints.add(startTime);
@@ -2579,24 +3117,35 @@ public class SagittariusReader implements Reader {
             List<String> single = new ArrayList<>();
             single.add(host);
             for (int j = 0; j < timePoints.size() - 1; ++j) {
-                List<String> predicates = getRangeQueryPredicates(single, metrics, timePoints.get(j), timePoints.get(j + 1));
-                if (predicates.size() == 0) {
-                    continue;
-                }
-                //query cassandra
-                JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_boolean").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
-                for (int i = 1; i < predicates.size(); ++i) {
-                    CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_boolean").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
-                    resultRDD = resultRDD.union(rdd);
-                }
+                List<Map.Entry<Long, List<CassandraRow>>> entryList = new ArrayList<>();
+                try {
+                    List<String> predicates = getRangeQueryPredicates(single, metrics, timePoints.get(j), timePoints.get(j + 1));
+                    if (predicates.size() == 0) {
+                        continue;
+                    }
+                    //query cassandra
+                    JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_boolean").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0) + queryFilter);
+                    for (int i = 1; i < predicates.size(); ++i) {
+                        CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_boolean").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i) + queryFilter);
+                        resultRDD = resultRDD.union(rdd);
+                    }
 
-                List<Map.Entry<Long, List<CassandraRow>>> entryList = resultRDD.collect()
-                        .stream()
-                        .collect(Collectors.groupingBy(e -> e.getLong("primary_time")))
-                        .entrySet()
-                        .stream()
-                        .sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey()))
-                        .collect(Collectors.toList());
+                    entryList = resultRDD.collect()
+                            .stream()
+                            .collect(Collectors.groupingBy(e -> e.getLong("primary_time")))
+                            .entrySet()
+                            .stream()
+                            .sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey()))
+                            .collect(Collectors.toList());
+                } catch (NoHostAvailableException e) {
+                    throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+                } catch (OperationTimedOutException | ReadTimeoutException e) {
+                    throw new TimeoutException(e.getMessage(), e.getCause());
+                } catch (QueryExecutionException e) {
+                    throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+                } catch (Exception e) {
+                    throw new SparkException(e.getMessage(), e.getCause());
+                }
 
                 StringBuilder sb = new StringBuilder();
                 for (Map.Entry<Long, List<CassandraRow>> entry : entryList) {
@@ -2626,7 +3175,9 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public void exportStringCSV(List<String> hosts, List<String> metrics, long startTime, long endTime, int splitHours, String filter, String filePath) throws IOException {
+    public void exportStringCSV(List<String> hosts, List<String> metrics, long startTime, long endTime, int splitHours, String filter, String filePath) throws IOException, com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException, SparkException {
+        if (endTime < startTime) return;
+
         //generate time ranges
         List<Long> timePoints = new ArrayList<>();
         timePoints.add(startTime);
@@ -2656,24 +3207,35 @@ public class SagittariusReader implements Reader {
             List<String> single = new ArrayList<>();
             single.add(host);
             for (int j = 0; j < timePoints.size() - 1; ++j) {
-                List<String> predicates = getRangeQueryPredicates(single, metrics, timePoints.get(j), timePoints.get(j + 1));
-                if (predicates.size() == 0) {
-                    continue;
-                }
-                //query cassandra
-                JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_text").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0)).filter(x -> x.getString("value").matches(regex));
-                for (int i = 1; i < predicates.size(); ++i) {
-                    JavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_text").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i)).filter(x -> x.getString("value").matches(regex));
-                    resultRDD = resultRDD.union(rdd);
-                }
+                List<Map.Entry<Long, List<CassandraRow>>> entryList = new ArrayList<>();
+                try {
+                    List<String> predicates = getRangeQueryPredicates(single, metrics, timePoints.get(j), timePoints.get(j + 1));
+                    if (predicates.size() == 0) {
+                        continue;
+                    }
+                    //query cassandra
+                    JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_text").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(0)).filter(x -> x.getString("value").matches(regex));
+                    for (int i = 1; i < predicates.size(); ++i) {
+                        JavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_text").select("host", "metric", "primary_time", "secondary_time", "value").where(predicates.get(i)).filter(x -> x.getString("value").matches(regex));
+                        resultRDD = resultRDD.union(rdd);
+                    }
 
-                List<Map.Entry<Long, List<CassandraRow>>> entryList = resultRDD.collect()
-                        .stream()
-                        .collect(Collectors.groupingBy(e -> e.getLong("primary_time")))
-                        .entrySet()
-                        .stream()
-                        .sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey()))
-                        .collect(Collectors.toList());
+                    entryList = resultRDD.collect()
+                            .stream()
+                            .collect(Collectors.groupingBy(e -> e.getLong("primary_time")))
+                            .entrySet()
+                            .stream()
+                            .sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey()))
+                            .collect(Collectors.toList());
+                } catch (NoHostAvailableException e) {
+                    throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+                } catch (OperationTimedOutException | ReadTimeoutException e) {
+                    throw new TimeoutException(e.getMessage(), e.getCause());
+                } catch (QueryExecutionException e) {
+                    throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+                } catch (Exception e) {
+                    throw new SparkException(e.getMessage(), e.getCause());
+                }
 
                 StringBuilder sb = new StringBuilder();
                 for (Map.Entry<Long, List<CassandraRow>> entry : entryList) {
@@ -2703,7 +3265,9 @@ public class SagittariusReader implements Reader {
     }
 
     @Override
-    public void exportGeoCSV(List<String> hosts, List<String> metrics, long startTime, long endTime, int splitHours, String filter, String filePath) throws IOException {
+    public void exportGeoCSV(List<String> hosts, List<String> metrics, long startTime, long endTime, int splitHours, String filter, String filePath) throws IOException, com.sagittarius.exceptions.NoHostAvailableException, TimeoutException, com.sagittarius.exceptions.QueryExecutionException, SparkException {
+        if (endTime < startTime) return;
+
         //generate time ranges
         List<Long> timePoints = new ArrayList<>();
         timePoints.add(startTime);
@@ -2733,24 +3297,35 @@ public class SagittariusReader implements Reader {
             List<String> single = new ArrayList<>();
             single.add(host);
             for (int j = 0; j < timePoints.size() - 1; ++j) {
-                List<String> predicates = getRangeQueryPredicates(single, metrics, timePoints.get(j), timePoints.get(j + 1));
-                if (predicates.size() == 0) {
-                    continue;
-                }
-                //query cassandra
-                JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_geo").select("host", "metric", "primary_time", "secondary_time", "latitude", "longitude").where(predicates.get(0) + queryFilter);
-                for (int i = 1; i < predicates.size(); ++i) {
-                    CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_geo").select("host", "metric", "primary_time", "secondary_time", "latitude", "longitude").where(predicates.get(i) + queryFilter);
-                    resultRDD = resultRDD.union(rdd);
-                }
+                List<Map.Entry<Long, List<CassandraRow>>> entryList = new ArrayList<>();
+                try {
+                    List<String> predicates = getRangeQueryPredicates(single, metrics, timePoints.get(j), timePoints.get(j + 1));
+                    if (predicates.size() == 0) {
+                        continue;
+                    }
+                    //query cassandra
+                    JavaRDD<CassandraRow> resultRDD = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_geo").select("host", "metric", "primary_time", "secondary_time", "latitude", "longitude").where(predicates.get(0) + queryFilter);
+                    for (int i = 1; i < predicates.size(); ++i) {
+                        CassandraTableScanJavaRDD<CassandraRow> rdd = javaFunctions(sparkContext).cassandraTable("sagittarius", "data_geo").select("host", "metric", "primary_time", "secondary_time", "latitude", "longitude").where(predicates.get(i) + queryFilter);
+                        resultRDD = resultRDD.union(rdd);
+                    }
 
-                List<Map.Entry<Long, List<CassandraRow>>> entryList = resultRDD.collect()
-                        .stream()
-                        .collect(Collectors.groupingBy(e -> e.getLong("primary_time")))
-                        .entrySet()
-                        .stream()
-                        .sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey()))
-                        .collect(Collectors.toList());
+                    entryList = resultRDD.collect()
+                            .stream()
+                            .collect(Collectors.groupingBy(e -> e.getLong("primary_time")))
+                            .entrySet()
+                            .stream()
+                            .sorted((e1, e2) -> e1.getKey().compareTo(e2.getKey()))
+                            .collect(Collectors.toList());
+                } catch (NoHostAvailableException e) {
+                    throw new com.sagittarius.exceptions.NoHostAvailableException(e.getMessage(), e.getCause());
+                } catch (OperationTimedOutException | ReadTimeoutException e) {
+                    throw new TimeoutException(e.getMessage(), e.getCause());
+                } catch (QueryExecutionException e) {
+                    throw new com.sagittarius.exceptions.QueryExecutionException(e.getMessage(), e.getCause());
+                } catch (Exception e) {
+                    throw new SparkException(e.getMessage(), e.getCause());
+                }
 
                 StringBuilder sb = new StringBuilder();
                 for (Map.Entry<Long, List<CassandraRow>> entry : entryList) {
@@ -2787,26 +3362,26 @@ public class SagittariusReader implements Reader {
         return result;
     }
 
-    private String getAggregationDataPredicate2(String host, String metric, long startHour, long endHour, String filter, AggregationType aggregationType){
+    private String getAggregationDataPredicate2(String host, String metric, long startHour, long endHour, String filter, AggregationType aggregationType) {
         // TODO: 17-4-6 what if string data and geo data?
         String predicate = null;
-        switch (aggregationType){
-            case MAX:{
+        switch (aggregationType) {
+            case MAX: {
                 String queryFilter = filter == null ? "" : " and " + filter.replaceAll("value", "max_value");
                 predicate = ("host = \'" + host + "\' and metric = \'" + metric + "\' and time_slice >= " + startHour + " and time_slice <= " + endHour + queryFilter);
                 break;
             }
-            case MIN:{
+            case MIN: {
                 String queryFilter = filter == null ? "" : " and " + filter.replaceAll("value", "min_value");
                 predicate = ("host = \'" + host + "\' and metric = \'" + metric + "\' and time_slice >= " + startHour + " and time_slice <= " + endHour + queryFilter);
                 break;
             }
-            case COUNT:{
+            case COUNT: {
                 String queryFilter = filter == null ? "" : " and " + filter.replaceAll("value", "max_value") + " and " + filter.replaceAll("value", "min_value");
                 predicate = ("host = \'" + host + "\' and metric = \'" + metric + "\' and time_slice >= " + startHour + " and time_slice <= " + endHour + queryFilter);
                 break;
             }
-            case SUM:{
+            case SUM: {
                 String queryFilter = filter == null ? "" : " and " + filter.replaceAll("value", "max_value") + " and " + filter.replaceAll("value", "min_value");
                 predicate = ("host = \'" + host + "\' and metric = \'" + metric + "\' and time_slice >= " + startHour + " and time_slice <= " + endHour + queryFilter);
             }
@@ -2814,23 +3389,39 @@ public class SagittariusReader implements Reader {
         return predicate;
     }
 
-    Map<String, Map<String, Double>> getNumericRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType, ValueType valueType){
+    Map<String, Map<String, Double>> getNumericRange(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType, ValueType valueType) {
         Map<String, Map<String, Double>> result = null;
-        switch (valueType){
-            case INT:{
-                result = getIntRange(hosts, metrics, startTime, endTime, filter, aggregationType);
+        switch (valueType) {
+            case INT: {
+                try {
+                    result = getIntRange(hosts, metrics, startTime, endTime, filter, aggregationType);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
                 break;
             }
-            case LONG:{
-                result = getLongRange(hosts, metrics, startTime, endTime, filter, aggregationType);
+            case LONG: {
+                try {
+                    result = getLongRange(hosts, metrics, startTime, endTime, filter, aggregationType);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
                 break;
             }
-            case FLOAT:{
-                result = getFloatRange(hosts, metrics, startTime, endTime, filter, aggregationType);
+            case FLOAT: {
+                try {
+                    result = getFloatRange(hosts, metrics, startTime, endTime, filter, aggregationType);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
                 break;
             }
-            case DOUBLE:{
-                result = getDoubleRange(hosts, metrics, startTime, endTime, filter, aggregationType);
+            case DOUBLE: {
+                try {
+                    result = getDoubleRange(hosts, metrics, startTime, endTime, filter, aggregationType);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
                 break;
             }
         }
@@ -2872,17 +3463,17 @@ public class SagittariusReader implements Reader {
                 List<AggregationData> ResultSet = getAggResult2(getAggregationDataPredicate2(host, metric, startHour, endHour, filter, aggregationType) + " ALLOW FILTERING");
                 HashSet<Long> totalTimeSlices = new HashSet<Long>();
                 HashSet<Long> usedTimeSlices = new HashSet<Long>();
-                for(AggregationData r : totoalResultSet){
-                    totalTimeSlices.add(r.getTimeSlice()) ;
+                for (AggregationData r : totoalResultSet) {
+                    totalTimeSlices.add(r.getTimeSlice());
                 }
-                for(AggregationData r : ResultSet){
+                for (AggregationData r : ResultSet) {
                     usedTimeSlices.add(r.getTimeSlice());
                     result = Math.max(result, r.getMaxValue());
                 }
                 totalTimeSlices.removeAll(usedTimeSlices);
-                for(long time : totalTimeSlices){
+                for (long time : totalTimeSlices) {
                     System.out.println(time);
-                    Map<String, Map<String, Double>> intervalMap = getNumericRange(hosts, metrics, time*3600000, time*3600000 + 3600000, filter, aggregationType, valueType);
+                    Map<String, Map<String, Double>> intervalMap = getNumericRange(hosts, metrics, time * 3600000, time * 3600000 + 3600000, filter, aggregationType, valueType);
                     double intervalResult = intervalMap.isEmpty() ? 0d : intervalMap.get(host).get(metric);
                     result = Math.max(result, intervalResult);
                 }
@@ -2912,18 +3503,18 @@ public class SagittariusReader implements Reader {
                 List<AggregationData> ResultSet = getAggResult2(getAggregationDataPredicate2(host, metric, startHour, endHour, filter, aggregationType) + " ALLOW FILTERING");
                 HashSet<Long> totalTimeSlices = new HashSet<Long>();
                 HashSet<Long> usedTimeSlices = new HashSet<Long>();
-                for(AggregationData r : totoalResultSet){
-                    totalTimeSlices.add(r.getTimeSlice()) ;
+                for (AggregationData r : totoalResultSet) {
+                    totalTimeSlices.add(r.getTimeSlice());
                 }
-                for(AggregationData r : ResultSet){
+                for (AggregationData r : ResultSet) {
                     usedTimeSlices.add(r.getTimeSlice());
                     result = Math.min(result, r.getMinValue());
                 }
                 totalTimeSlices.removeAll(usedTimeSlices);
-                for(long time : totalTimeSlices){
+                for (long time : totalTimeSlices) {
                     System.out.println(time);
-                    Map<String, Map<String, Double>> intervalMap = getNumericRange(hosts, metrics, time*3600000, time*3600000 + 3600000, filter, aggregationType, valueType);
-                    double intervalResult = intervalMap.isEmpty() ?Long.MAX_VALUE : intervalMap.get(host).get(metric);
+                    Map<String, Map<String, Double>> intervalMap = getNumericRange(hosts, metrics, time * 3600000, time * 3600000 + 3600000, filter, aggregationType, valueType);
+                    double intervalResult = intervalMap.isEmpty() ? Long.MAX_VALUE : intervalMap.get(host).get(metric);
                     result = Math.min(result, intervalResult);
                 }
                 break;
@@ -2952,17 +3543,17 @@ public class SagittariusReader implements Reader {
                 List<AggregationData> ResultSet = getAggResult2(getAggregationDataPredicate2(host, metric, startHour, endHour, filter, aggregationType) + " ALLOW FILTERING");
                 HashSet<Long> totalTimeSlices = new HashSet<Long>();
                 HashSet<Long> usedTimeSlices = new HashSet<Long>();
-                for(AggregationData r : totoalResultSet){
-                    totalTimeSlices.add(r.getTimeSlice()) ;
+                for (AggregationData r : totoalResultSet) {
+                    totalTimeSlices.add(r.getTimeSlice());
                 }
-                for(AggregationData r : ResultSet){
+                for (AggregationData r : ResultSet) {
                     usedTimeSlices.add(r.getTimeSlice());
                     result += r.getCountValue();
                 }
                 totalTimeSlices.removeAll(usedTimeSlices);
-                for(long time : totalTimeSlices){
+                for (long time : totalTimeSlices) {
                     System.out.println(time);
-                    Map<String, Map<String, Double>> intervalMap = getNumericRange(hosts, metrics, time*3600000, time*3600000 + 3600000, filter, aggregationType, valueType);
+                    Map<String, Map<String, Double>> intervalMap = getNumericRange(hosts, metrics, time * 3600000, time * 3600000 + 3600000, filter, aggregationType, valueType);
                     double intervalResult = intervalMap.isEmpty() ? 0d : intervalMap.get(host).get(metric);
                     result += intervalResult;
                 }
@@ -2992,23 +3583,23 @@ public class SagittariusReader implements Reader {
                 List<AggregationData> ResultSet = getAggResult2(getAggregationDataPredicate2(host, metric, startHour, endHour, filter, aggregationType) + " ALLOW FILTERING");
                 HashSet<Long> totalTimeSlices = new HashSet<Long>();
                 HashSet<Long> usedTimeSlices = new HashSet<Long>();
-                for(AggregationData r : totoalResultSet){
-                    totalTimeSlices.add(r.getTimeSlice()) ;
+                for (AggregationData r : totoalResultSet) {
+                    totalTimeSlices.add(r.getTimeSlice());
                 }
-                for(AggregationData r : ResultSet){
+                for (AggregationData r : ResultSet) {
                     usedTimeSlices.add(r.getTimeSlice());
-                    result+= r.getSumValue();
+                    result += r.getSumValue();
                 }
                 totalTimeSlices.removeAll(usedTimeSlices);
-                for(long time : totalTimeSlices){
+                for (long time : totalTimeSlices) {
                     System.out.println(time);
-                    Map<String, Map<String, Double>> intervalMap = getNumericRange(hosts, metrics, time*3600000, time*3600000 + 3600000, filter, aggregationType, valueType);
+                    Map<String, Map<String, Double>> intervalMap = getNumericRange(hosts, metrics, time * 3600000, time * 3600000 + 3600000, filter, aggregationType, valueType);
                     double intervalResult = intervalMap.isEmpty() ? 0d : intervalMap.get(host).get(metric);
                     result += intervalResult;
                 }
                 break;
             }
-            case AVG:{
+            case AVG: {
                 double s = getSingleAggregationResult2(host, metric, startTime, endTime, filter, AggregationType.SUM, valueType);
                 double c = getSingleAggregationResult2(host, metric, startTime, endTime, filter, AggregationType.COUNT, valueType);
                 result = s / c;
@@ -3018,47 +3609,47 @@ public class SagittariusReader implements Reader {
         return result;
     }
 
-    public Map<String, Map<String, Double>> getFloatAggregation(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType, ValueType valueType){
+    public Map<String, Map<String, Double>> getFloatAggregation(List<String> hosts, List<String> metrics, long startTime, long endTime, String filter, AggregationType aggregationType, ValueType valueType) {
         //make sure that data has been pre-aggregated
         Map<String, Map<String, Double>> result = new HashMap<>();
-        for(String host : hosts){
+        for (String host : hosts) {
             Map<String, Double> hostResult = new HashMap<>();
-            for(String metric : metrics){
+            for (String metric : metrics) {
                 hostResult.put(metric, getSingleAggregationResult2(host, metric, startTime, endTime, filter, aggregationType, valueType));
             }
             result.put(host, hostResult);
         }
-        return  result;
+        return result;
     }
 
-    public void preAggregateFunction2(List<String> hosts, List<String> metrics, long startTime, long endTime, SagittariusWriter writer){
+    public void preAggregateFunction2(List<String> hosts, List<String> metrics, long startTime, long endTime, SagittariusWriter writer) {
 
         // TODO: 17-3-28 if hosts == null then hosts = all hosts, so does metrics
-        long startTimeHour = startTime/3600000;
-        long endTimeHour = endTime/3600000;
-        while (startTimeHour < endTimeHour){
+        long startTimeHour = startTime / 3600000;
+        long endTimeHour = endTime / 3600000;
+        while (startTimeHour < endTimeHour) {
             long queryStartTime = startTimeHour * 3600000;
             long queryEndTime = queryStartTime + 3600000;
-            for (String host : hosts){
-                for(String metric : metrics){
+            for (String host : hosts) {
+                for (String metric : metrics) {
                     ArrayList<String> queryHost = new ArrayList<>();
                     queryHost.add(host);
                     ArrayList<String> queryMetric = new ArrayList<>();
                     queryMetric.add(metric);
-                    String filter = getRangeQueryPredicates(queryHost,queryMetric, queryStartTime,queryEndTime).get(0);
+                    String filter = getRangeQueryPredicates(queryHost, queryMetric, queryStartTime, queryEndTime).get(0);
                     SimpleStatement statement = new SimpleStatement("select max(value) from data_float where " + filter);
                     ResultSet resultSet = session.execute(statement);
-                    double maxResult = (double)(resultSet.all().get(0).getFloat(0));
+                    double maxResult = (double) (resultSet.all().get(0).getFloat(0));
                     statement = new SimpleStatement("select min(value) from data_float where " + filter);
                     resultSet = session.execute(statement);
-                    double minResult = (double)(resultSet.all().get(0).getFloat(0));
+                    double minResult = (double) (resultSet.all().get(0).getFloat(0));
                     statement = new SimpleStatement("select count(value) from data_float where " + filter);
                     resultSet = session.execute(statement);
-                    double countResult = (double)(resultSet.all().get(0).getLong(0));
+                    double countResult = (double) (resultSet.all().get(0).getLong(0));
                     statement = new SimpleStatement("select sum(value) from data_float where " + filter);
                     resultSet = session.execute(statement);
-                    double sumResult = (double)(resultSet.all().get(0).getFloat(0));
-                    if(countResult > 0){
+                    double sumResult = (double) (resultSet.all().get(0).getFloat(0));
+                    if (countResult > 0) {
                         writer.insert(host, metric, startTimeHour, maxResult, minResult, countResult, sumResult);
                     }
 

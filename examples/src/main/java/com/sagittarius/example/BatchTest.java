@@ -1,6 +1,9 @@
 package com.sagittarius.example;
 
 import com.sagittarius.bean.common.TimePartition;
+import com.sagittarius.exceptions.NoHostAvailableException;
+import com.sagittarius.exceptions.QueryExecutionException;
+import com.sagittarius.exceptions.TimeoutException;
 import com.sagittarius.write.SagittariusWriter;
 import com.sagittarius.write.Writer;
 import org.slf4j.Logger;
@@ -41,7 +44,11 @@ public class BatchTest extends  Thread{
         long time = System.currentTimeMillis();
         while ((System.currentTimeMillis() - start) < runTime * 60 * 60 * 1000) {
             for (int i = 0; i < 3000; ++i) {
-                writer.insert(host, "APP", time, time, TimePartition.DAY, random.nextLong());
+                try {
+                    writer.insert(host, "APP", time, time, TimePartition.DAY, random.nextLong());
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
                 ++time;
             }
             count += 3000;
